@@ -6,7 +6,7 @@
 
 **Architecture:** A single repository with `backend/` (Spring Boot, Maven) and `frontend/` (Next.js, App Router, TypeScript) as sibling directories, plus a root `docker-compose.yml` that runs Postgres for local development. The backend exposes Spring Boot Actuator's health endpoint (extended to report database connectivity once Postgres is wired in); the frontend fetches it and displays backend/database status, proving the full chain works end to end before any domain code is written.
 
-**Tech Stack:** Java 21, Spring Boot 3.3.x, Maven, Spring Boot Actuator, Spring Data JPA, PostgreSQL JDBC driver, Flyway. Next.js (App Router) + TypeScript, Jest + React Testing Library. Docker Compose for local Postgres. Testcontainers (JUnit) for the backend's database-aware test.
+**Tech Stack:** Java 21, Spring Boot 3.3.x, Maven, Spring Boot Actuator, Spring Data JPA, PostgreSQL JDBC driver, Flyway. Next.js (App Router) + TypeScript, Jest + React Testing Library. Docker Compose for local Postgres (the database-aware backend test runs against this same Postgres, started first — no Testcontainers dependency).
 
 **Spec:** `docs/superpowers/specs/2026-11-06-crm-foundation-design.md` (Real Estate CRM — Foundation Design), section 7, Phase 1.
 
@@ -122,12 +122,12 @@ git commit -m "Scaffold Spring Boot backend with Actuator health endpoint"
 
 **Files:**
 - Create: `docker-compose.yml`
-- Modify: `backend/pom.xml` (add `spring-boot-starter-data-jpa`, `org.postgresql:postgresql`, `org.flywaydb:flyway-core`, `org.flywaydb:flyway-database-postgresql`, test-scope `org.testcontainers:postgresql` and `org.testcontainers:junit-jupiter`)
+- Modify: `backend/pom.xml` (add `spring-boot-starter-data-jpa`, `org.postgresql:postgresql`, `org.flywaydb:flyway-core`, `org.flywaydb:flyway-database-postgresql`)
 - Modify: `backend/src/main/resources/application.yml` (add `spring.datasource.*` reading from env vars with local defaults)
 - Test: `backend/src/test/java/com/sweethomecompany/crm/CrmApplicationDbHealthTest.java`
 
 **Interfaces:**
-- Consumes: nothing new from Task 1 beyond the running `CrmApplication` context.
+- Consumes: nothing new from Task 1 beyond the running `CrmApplication` context. Assumes Postgres is already reachable at the configured `DB_HOST`/`DB_PORT` (started via `docker compose up -d postgres`) — this is a plain integration test against a real, already-running Postgres, not a self-contained Testcontainers test, so the same Postgres you'll run day-to-day via Compose is what the test exercises.
 - Produces: `GET /actuator/health` now also returns a `components.db.status` field once a `DataSource` bean exists — later phases' entities and repositories rely on this same `DataSource`/Flyway wiring, not a new one.
 
 - [ ] **Step 1: Write the failing test**
@@ -139,21 +139,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.http.ResponseEntity;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@Testcontainers
+// Requires Postgres reachable at the configured DB_HOST/DB_PORT — run
+// `docker compose up -d postgres` first.
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class CrmApplicationDbHealthTest {
-
-    @Container
-    @ServiceConnection
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
 
     @Autowired
     private TestRestTemplate restTemplate;
@@ -169,7 +162,7 @@ class CrmApplicationDbHealthTest {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `cd backend && ./mvnw test -Dtest=CrmApplicationDbHealthTest`
-Expected: FAIL (Testcontainers/Postgres dependencies and datasource config don't exist yet)
+Expected: FAIL (no "db" component in the health response yet — the datasource dependency isn't on the classpath, so this fails the same way whether or not Postgres happens to be running)
 
 - [ ] **Step 3: Add dependencies and datasource config**
 
@@ -208,7 +201,7 @@ No Flyway migration files are added in this task — Flyway is valid and runs cl
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd backend && ./mvnw test -Dtest=CrmApplicationDbHealthTest`
+Run: `docker compose up -d postgres` (wait until `docker compose ps` shows it healthy), then `cd backend && ./mvnw test -Dtest=CrmApplicationDbHealthTest`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
