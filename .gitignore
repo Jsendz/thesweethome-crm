@@ -1,0 +1,15 @@
+# Superpowers scratch workspace (ledgers, briefs, review packages) — never committed
+.superpowers/
+
+# Java / Maven
+backend/target/
+*.class
+
+# Node / Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+npm-debug.log*
+
+# OS / editor
+.DS_Store
