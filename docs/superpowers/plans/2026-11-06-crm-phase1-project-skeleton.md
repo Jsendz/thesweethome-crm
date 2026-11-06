@@ -33,9 +33,9 @@
 
 **Files:**
 - Create: `backend/pom.xml`
-- Create: `backend/src/main/java/com/andorraagency/crm/CrmApplication.java`
+- Create: `backend/src/main/java/com/sweethomecompany/crm/CrmApplication.java`
 - Create: `backend/src/main/resources/application.yml`
-- Test: `backend/src/test/java/com/andorraagency/crm/CrmApplicationHealthTest.java`
+- Test: `backend/src/test/java/com/sweethomecompany/crm/CrmApplicationHealthTest.java`
 
 **Interfaces:**
 - Produces: `GET /actuator/health` → `200 {"status":"UP"}` (no database component yet — added in Task 2). Every later phase's own health/readiness checks build on this same endpoint rather than inventing a new one.
@@ -43,7 +43,7 @@
 - [ ] **Step 1: Write the failing test**
 
 ```java
-package com.andorraagency.crm;
+package com.sweethomecompany.crm;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -79,7 +79,7 @@ Expected: FAIL (no Maven project / main application class exists yet)
 
 `backend/pom.xml`: Spring Boot 3.3.x parent, Java 21, dependencies `spring-boot-starter-web`, `spring-boot-starter-actuator`, `spring-boot-starter-test` (test scope), `assertj-core` (brought in transitively by starter-test — do not add separately).
 
-`backend/src/main/java/com/andorraagency/crm/CrmApplication.java`:
+`backend/src/main/java/com/sweethomecompany/crm/CrmApplication.java`:
 ```java
 @SpringBootApplication
 public class CrmApplication {
@@ -124,7 +124,7 @@ git commit -m "Scaffold Spring Boot backend with Actuator health endpoint"
 - Create: `docker-compose.yml`
 - Modify: `backend/pom.xml` (add `spring-boot-starter-data-jpa`, `org.postgresql:postgresql`, `org.flywaydb:flyway-core`, `org.flywaydb:flyway-database-postgresql`, test-scope `org.testcontainers:postgresql` and `org.testcontainers:junit-jupiter`)
 - Modify: `backend/src/main/resources/application.yml` (add `spring.datasource.*` reading from env vars with local defaults)
-- Test: `backend/src/test/java/com/andorraagency/crm/CrmApplicationDbHealthTest.java`
+- Test: `backend/src/test/java/com/sweethomecompany/crm/CrmApplicationDbHealthTest.java`
 
 **Interfaces:**
 - Consumes: nothing new from Task 1 beyond the running `CrmApplication` context.
@@ -133,7 +133,7 @@ git commit -m "Scaffold Spring Boot backend with Actuator health endpoint"
 - [ ] **Step 1: Write the failing test**
 
 ```java
-package com.andorraagency.crm;
+package com.sweethomecompany.crm;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -323,8 +323,8 @@ git commit -m "Scaffold Next.js frontend showing backend/database health"
 ## Task 4: CORS wiring and full-stack local verification
 
 **Files:**
-- Create: `backend/src/main/java/com/andorraagency/crm/config/CorsConfig.java`
-- Test: `backend/src/test/java/com/andorraagency/crm/config/CorsConfigTest.java`
+- Create: `backend/src/main/java/com/sweethomecompany/crm/config/CorsConfig.java`
+- Test: `backend/src/test/java/com/sweethomecompany/crm/config/CorsConfigTest.java`
 - Modify: `README.md` (local dev quick-start steps)
 
 **Interfaces:**
@@ -334,7 +334,7 @@ git commit -m "Scaffold Next.js frontend showing backend/database health"
 - [ ] **Step 1: Write the failing test**
 
 ```java
-package com.andorraagency.crm.config;
+package com.sweethomecompany.crm.config;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
