@@ -1,6 +1,12 @@
 spring:
   application:
     name: crm-backend
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5435}/${DB_NAME:crm}
+    username: ${DB_USER:crm}
+    password: ${DB_PASSWORD:crm_dev_only}
+  flyway:
+    enabled: true
 management:
   endpoints:
     web:
