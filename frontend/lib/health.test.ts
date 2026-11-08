@@ -11,6 +11,19 @@ describe("fetchHealth", () => {
     expect(result).toEqual({ backend: "UP", database: "UP" });
   });
 
+  it("returns backend UP and database DOWN when the backend answers unhealthy", async () => {
+    // Actuator rolls component status up to the top level and answers 503,
+    // but the backend itself is reachable and responding.
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: async () => ({ status: "DOWN", components: { db: { status: "DOWN" } } }),
+    }) as jest.Mock;
+
+    const result = await fetchHealth();
+    expect(result).toEqual({ backend: "UP", database: "DOWN" });
+  });
+
   it("returns backend DOWN and database UNKNOWN when the fetch itself fails", async () => {
     global.fetch = jest.fn().mockRejectedValue(new Error("network error"));
 

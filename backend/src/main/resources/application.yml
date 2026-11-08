@@ -1,3 +1,6 @@
+server:
+  # 8081, not 8080: native EDB/Postgres services (PEM httpd) own 8080 on this machine.
+  port: ${SERVER_PORT:8081}
 spring:
   application:
     name: crm-backend
@@ -12,6 +15,11 @@ management:
     web:
       exposure:
         include: health
+      # Actuator endpoints use their own handler mapping and ignore
+      # WebMvcConfigurer CORS mappings, so CORS for /actuator/** lives here.
+      cors:
+        allowed-origins: http://localhost:3000
+        allowed-methods: GET,OPTIONS
   endpoint:
     health:
       show-details: always
