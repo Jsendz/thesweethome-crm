@@ -100,6 +100,32 @@ class LoginTest {
     }
 
     @Test
+    void loginResponseIncludesCorsHeadersForTheFrontendOrigin() {
+        // formLogin's success/failure handlers write the response from inside the
+        // Security filter chain, before Spring MVC (and CorsConfig's WebMvcConfigurer
+        // mapping) ever sees the request. TestRestTemplate's other calls never send an
+        // Origin header, so they can't catch a missing SecurityConfig.cors(...) the way
+        // a real browser would.
+        ResponseEntity<String> csrfResponse = restTemplate.getForEntity("/api/auth/me", String.class);
+        String csrfToken = extractCookie(csrfResponse, "XSRF-TOKEN");
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+        headers.add("X-XSRF-TOKEN", csrfToken);
+        headers.add(HttpHeaders.COOKIE, "XSRF-TOKEN=" + csrfToken);
+        headers.add(HttpHeaders.ORIGIN, "http://localhost:3000");
+        MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
+        body.add("email", "admin@example.com");
+        body.add("password", "change-me-now");
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+            "/api/auth/login", new HttpEntity<>(body, headers), String.class);
+
+        assertThat(response.getHeaders().getFirst(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN))
+            .isEqualTo("http://localhost:3000");
+    }
+
+    @Test
     void postingToLogoutWithoutACsrfTokenIsRejected() {
         ResponseEntity<String> response = restTemplate.postForEntity(
             "/api/auth/logout", new HttpEntity<>(new LinkedMultiValueMap<>()), String.class);

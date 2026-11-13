@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
@@ -23,6 +24,16 @@ public class SecurityConfig {
             AuditingAuthenticationSuccessHandler successHandler,
             AuditingAuthenticationFailureHandler failureHandler) throws Exception {
         http
+            // CorsConfig (a WebMvcConfigurer) only applies once Spring MVC dispatches
+            // to a handler. formLogin's success/failure handlers, the 401 entry point,
+            // and CSRF rejections are all written to the response from inside this
+            // filter chain, before MVC ever sees the request — without this, none of
+            // those responses would carry Access-Control-Allow-* headers, and the
+            // browser would block the frontend from reading them even though the
+            // request succeeded server-side. No explicit CorsConfigurationSource bean
+            // is needed: Spring Security auto-detects CorsConfig's mapping via
+            // HandlerMappingIntrospector.
+            .cors(Customizer.withDefaults())
             .csrf(csrf -> csrf
                 // Plain (non-Xor) handler: CookieCsrfTokenRepository stores the raw
                 // token value directly in the cookie, so the SPA reads that raw value
