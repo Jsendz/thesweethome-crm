@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.core.session.SessionRegistry;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
@@ -22,7 +23,8 @@ public class SecurityConfig {
     SecurityFilterChain filterChain(
             HttpSecurity http,
             AuditingAuthenticationSuccessHandler successHandler,
-            AuditingAuthenticationFailureHandler failureHandler) throws Exception {
+            AuditingAuthenticationFailureHandler failureHandler,
+            SessionRegistry sessionRegistry) throws Exception {
         http
             // CorsConfig (a WebMvcConfigurer) only applies once Spring MVC dispatches
             // to a handler. formLogin's success/failure handlers, the 401 entry point,
@@ -64,7 +66,19 @@ public class SecurityConfig {
                 .failureHandler(failureHandler))
             .logout(logout -> logout
                 .logoutUrl("/api/auth/logout")
-                .logoutSuccessHandler((request, response, authentication) -> response.setStatus(HttpServletResponse.SC_OK)));
+                .logoutSuccessHandler((request, response, authentication) -> response.setStatus(HttpServletResponse.SC_OK)))
+            // Not a real cap (10,000 is effectively unlimited) - this only exists to
+            // activate Spring Security's concurrent-session tracking, which populates
+            // sessionRegistry on every login so UserController can look up and expire
+            // a specific user's session when they're deactivated.
+            .sessionManagement(session -> session
+                .maximumSessions(10_000)
+                .sessionRegistry(sessionRegistry)
+                // Without this, an expired session's next request gets Spring
+                // Security's default expired-session response (200 OK with a plain
+                // text body) instead of the 401 every other unauthenticated request
+                // on this API returns.
+                .expiredSessionStrategy(event -> event.getResponse().setStatus(HttpServletResponse.SC_UNAUTHORIZED)));
         return http.build();
     }
 }
