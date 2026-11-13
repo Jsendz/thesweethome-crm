@@ -1,10 +1,9 @@
+import { API_BASE_URL } from "./apiBaseUrl";
+
 export type HealthStatus = {
   backend: "UP" | "DOWN";
   database: "UP" | "DOWN" | "UNKNOWN";
 };
-
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081";
 
 export async function fetchHealth(): Promise<HealthStatus> {
   try {
