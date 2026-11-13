@@ -1,6 +1,10 @@
 server:
   # 8081, not 8080: native EDB/Postgres services (PEM httpd) own 8080 on this machine.
   port: ${SERVER_PORT:8081}
+  servlet:
+    session:
+      cookie:
+        name: SESSION
 spring:
   application:
     name: crm-backend
