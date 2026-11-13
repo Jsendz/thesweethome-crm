@@ -10,6 +10,11 @@ spring:
     password: ${DB_PASSWORD:crm_dev_only}
   flyway:
     enabled: true
+app:
+  default-agency-id: 11111111-1111-1111-1111-111111111111
+  admin:
+    email: ${ADMIN_EMAIL:admin@example.com}
+    password: ${ADMIN_PASSWORD:change-me-now}
 management:
   endpoints:
     web:
