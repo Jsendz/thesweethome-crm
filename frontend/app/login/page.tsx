@@ -3,9 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { login } from "../../lib/auth";
+import { useAuth } from "../../lib/AuthContext";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { refresh } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(false);
@@ -14,6 +16,9 @@ export default function LoginPage() {
     event.preventDefault();
     const success = await login(email, password);
     if (success) {
+      // AuthProvider only fetches /api/auth/me on mount (when we were still
+      // logged out), so re-fetch it now or NavBar stays hidden until a reload.
+      await refresh();
       router.push("/");
     } else {
       setError(true);
