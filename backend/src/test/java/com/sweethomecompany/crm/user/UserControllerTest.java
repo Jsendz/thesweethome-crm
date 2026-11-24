@@ -36,7 +36,8 @@ class UserControllerTest {
     // account survives.
     private static final List<String> TEST_EMAILS = List.of(
         "new-agent@example.com", "dupe@example.com", "manager@example.com",
-        "blocked@example.com", "to-deactivate@example.com");
+        "blocked@example.com", "to-deactivate@example.com", "csrf-check@example.com",
+        "no-password@example.com", "casedupe@example.com", "role-change-agent@example.com");
 
     @BeforeEach
     @AfterEach
@@ -166,5 +167,133 @@ class UserControllerTest {
         ResponseEntity<String> loginAfterDeactivation = restTemplate.postForEntity(
             "/api/auth/login", new HttpEntity<>(body, loginHeaders), String.class);
         assertThat(loginAfterDeactivation.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void mutatingWithAValidSessionButNoCsrfTokenIsRejected() {
+        Session admin = loginAs("admin@example.com", "change-me-now");
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        // Deliberately only the SESSION cookie - no X-XSRF-TOKEN header and
+        // no XSRF-TOKEN cookie. This is exactly the Review Focus scenario:
+        // "a request with a valid session cookie but no CSRF token must be
+        // rejected on any mutating endpoint" - postingToLogoutWithoutACsrfTokenIsRejected
+        // (in LoginTest) proves this with no session at all, which would
+        // still pass even if someone later exempted /api/users from CSRF.
+        headers.add(HttpHeaders.COOKIE, "SESSION=" + admin.sessionCookie());
+        String createJson = """
+            {"email":"csrf-check@example.com","password":"a-strong-password","fullName":"Csrf Check","role":"AGENT"}""";
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+            "/api/users", new HttpEntity<>(createJson, headers), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(appUserRepository.findByEmail("csrf-check@example.com")).isEmpty();
+    }
+
+    @Test
+    void creatingWithABlankPasswordReturns400() {
+        Session admin = loginAs("admin@example.com", "change-me-now");
+        String createJson = """
+            {"email":"no-password@example.com","password":"","fullName":"No Password","role":"AGENT"}""";
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+            "/api/users", new HttpEntity<>(createJson, authedHeaders(admin)), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(appUserRepository.findByEmail("no-password@example.com")).isEmpty();
+    }
+
+    @Test
+    void creatingWithABlankEmailReturns400() {
+        Session admin = loginAs("admin@example.com", "change-me-now");
+        String createJson = """
+            {"email":"","password":"a-strong-password","fullName":"No Email","role":"AGENT"}""";
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+            "/api/users", new HttpEntity<>(createJson, authedHeaders(admin)), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void creatingAnEmailThatDiffersOnlyByCaseFromAnExistingOneReturns409() {
+        Session admin = loginAs("admin@example.com", "change-me-now");
+        String firstJson = """
+            {"email":"CaseDupe@example.com","password":"a-strong-password","fullName":"First","role":"AGENT"}""";
+        ResponseEntity<String> firstResponse = restTemplate.postForEntity(
+            "/api/users", new HttpEntity<>(firstJson, authedHeaders(admin)), String.class);
+        assertThat(firstResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        String secondJson = """
+            {"email":"casedupe@example.com","password":"another-password","fullName":"Second","role":"AGENT"}""";
+        ResponseEntity<String> secondResponse = restTemplate.postForEntity(
+            "/api/users", new HttpEntity<>(secondJson, authedHeaders(admin)), String.class);
+
+        assertThat(secondResponse.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        // Stored normalized (lowercase) by EmailNormalizer - exactly one row.
+        assertThat(appUserRepository.findByEmail("casedupe@example.com")).isPresent();
+    }
+
+    @Test
+    void anAdminCannotDeactivateThemselves() {
+        Session admin = loginAs("admin@example.com", "change-me-now");
+        AppUser adminUser = appUserRepository.findByEmail("admin@example.com").orElseThrow();
+
+        ResponseEntity<String> response = restTemplate.exchange(
+            "/api/users/" + adminUser.getId(), HttpMethod.PATCH,
+            new HttpEntity<>("{\"active\":false}", authedHeaders(admin)), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(appUserRepository.findByEmail("admin@example.com").orElseThrow().isActive()).isTrue();
+    }
+
+    @Test
+    void adminCanChangeARoleAndPasswordAndTheOldSessionAndPasswordStopWorking() {
+        Session admin = loginAs("admin@example.com", "change-me-now");
+        String createJson = """
+            {"email":"role-change-agent@example.com","password":"original-password","fullName":"Will Change","role":"AGENT"}""";
+        restTemplate.postForEntity("/api/users", new HttpEntity<>(createJson, authedHeaders(admin)), String.class);
+        Session target = loginAs("role-change-agent@example.com", "original-password");
+
+        AppUser targetUser = appUserRepository.findByEmail("role-change-agent@example.com").orElseThrow();
+        String updateJson = """
+            {"role":"MANAGER","password":"brand-new-password"}""";
+        ResponseEntity<String> response = restTemplate.exchange(
+            "/api/users/" + targetUser.getId(), HttpMethod.PATCH,
+            new HttpEntity<>(updateJson, authedHeaders(admin)), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().toLowerCase()).doesNotContain("password");
+        assertThat(appUserRepository.findByEmail("role-change-agent@example.com").orElseThrow().getRole())
+            .isEqualTo(Role.MANAGER);
+
+        // The old session's cached AppUserPrincipal still holds the old
+        // role/authorities - a role change must expire it, the same way
+        // deactivation does, or the stale authorities stay live.
+        HttpHeaders meHeaders = new HttpHeaders();
+        meHeaders.add(HttpHeaders.COOKIE, "SESSION=" + target.sessionCookie());
+        assertThat(restTemplate.exchange("/api/auth/me", HttpMethod.GET, new HttpEntity<>(meHeaders), String.class)
+            .getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+
+        assertThat(loginFails("role-change-agent@example.com", "original-password")).isTrue();
+        Session withNewPassword = loginAs("role-change-agent@example.com", "brand-new-password");
+        assertThat(withNewPassword.sessionCookie()).isNotBlank();
+    }
+
+    private boolean loginFails(String email, String password) {
+        ResponseEntity<String> csrfResponse = restTemplate.getForEntity("/api/auth/me", String.class);
+        String csrfToken = extractCookie(csrfResponse, "XSRF-TOKEN");
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+        headers.add("X-XSRF-TOKEN", csrfToken);
+        headers.add(HttpHeaders.COOKIE, "XSRF-TOKEN=" + csrfToken);
+        MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
+        body.add("email", email);
+        body.add("password", password);
+        ResponseEntity<String> response = restTemplate.postForEntity(
+            "/api/auth/login", new HttpEntity<>(body, headers), String.class);
+        return response.getStatusCode() == HttpStatus.UNAUTHORIZED;
     }
 }

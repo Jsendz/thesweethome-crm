@@ -1,6 +1,7 @@
 package com.sweethomecompany.crm.security;
 
 import com.sweethomecompany.crm.user.AppUserRepository;
+import com.sweethomecompany.crm.user.EmailNormalizer;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -17,8 +18,9 @@ public class AppUserDetailsService implements UserDetailsService {
 
     @Override
     public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
-        return appUserRepository.findByEmail(email)
+        String normalized = EmailNormalizer.normalize(email);
+        return appUserRepository.findByEmail(normalized)
             .map(AppUserPrincipal::new)
-            .orElseThrow(() -> new UsernameNotFoundException("No user with email " + email));
+            .orElseThrow(() -> new UsernameNotFoundException("No user with email " + normalized));
     }
 }

@@ -2,6 +2,7 @@ package com.sweethomecompany.crm.security;
 
 import com.sweethomecompany.crm.user.AppUser;
 import com.sweethomecompany.crm.user.AppUserRepository;
+import com.sweethomecompany.crm.user.EmailNormalizer;
 import com.sweethomecompany.crm.user.Role;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
@@ -42,7 +43,7 @@ public class AdminUserSeeder implements ApplicationRunner {
         AppUser admin = new AppUser();
         admin.setId(UUID.randomUUID());
         admin.setAgencyId(defaultAgencyId);
-        admin.setEmail(adminEmail);
+        admin.setEmail(EmailNormalizer.normalize(adminEmail));
         admin.setPasswordHash(passwordEncoder.encode(adminPassword));
         admin.setFullName("Admin");
         admin.setRole(Role.ADMIN);

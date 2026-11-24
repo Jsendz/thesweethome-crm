@@ -1,6 +1,7 @@
 package com.sweethomecompany.crm.security;
 
 import com.sweethomecompany.crm.audit.AuditAction;
+import com.sweethomecompany.crm.audit.AuditLog;
 import com.sweethomecompany.crm.audit.AuditLogRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -130,5 +131,53 @@ class LoginTest {
         ResponseEntity<String> response = restTemplate.postForEntity(
             "/api/auth/logout", new HttpEntity<>(new LinkedMultiValueMap<>()), String.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    void loggingInWithADifferentlyCasedEmailStillSucceeds() {
+        ResponseEntity<String> csrfResponse = restTemplate.getForEntity("/api/auth/me", String.class);
+        String csrfToken = extractCookie(csrfResponse, "XSRF-TOKEN");
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+        headers.add("X-XSRF-TOKEN", csrfToken);
+        headers.add(HttpHeaders.COOKIE, "XSRF-TOKEN=" + csrfToken);
+        MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
+        // The seeded admin is stored as "admin@example.com" - a real person
+        // typing their own email with different capitalization (common on
+        // mobile keyboards and with password managers) must still get in.
+        body.add("email", "Admin@Example.com");
+        body.add("password", "change-me-now");
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+            "/api/auth/login", new HttpEntity<>(body, headers), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    void aFailedLoginWithARealEmailDoesNotAttributeTheAttemptToTheTargetAccount() {
+        ResponseEntity<String> csrfResponse = restTemplate.getForEntity("/api/auth/me", String.class);
+        String csrfToken = extractCookie(csrfResponse, "XSRF-TOKEN");
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+        headers.add("X-XSRF-TOKEN", csrfToken);
+        headers.add(HttpHeaders.COOKIE, "XSRF-TOKEN=" + csrfToken);
+        MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
+        body.add("email", "admin@example.com");
+        body.add("password", "not-the-right-password");
+
+        restTemplate.postForEntity("/api/auth/login", new HttpEntity<>(body, headers), String.class);
+
+        // Whoever sent this request isn't authenticated - the LOGIN_FAILED
+        // row must not claim admin@example.com performed their own failed
+        // login attempt (actorUserId null), only that their account was the
+        // one targeted (entityId set, and the attempted email kept in detail
+        // for the cases where no account matches at all).
+        AuditLog row = auditLogRepository.findAll().stream()
+            .filter(r -> r.getAction() == AuditAction.LOGIN_FAILED)
+            .findFirst().orElseThrow();
+        assertThat(row.getActorUserId()).isNull();
+        assertThat(row.getEntityId()).isNotNull();
+        assertThat(row.getDetail()).contains("admin@example.com");
     }
 }
