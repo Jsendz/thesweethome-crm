@@ -22,4 +22,19 @@ describe("UsersPage", () => {
     render(<UsersPage />);
     await waitFor(() => expect(screen.getByText("agent@b.com")).toBeInTheDocument());
   });
+
+  it("treats a 401 from the list request as a session that just expired", async () => {
+    const refreshMock = jest.fn();
+    (useAuth as jest.Mock).mockReturnValue({
+      user: { email: "admin@b.com", role: "ADMIN" },
+      loading: false,
+      refresh: refreshMock,
+    });
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 401 }) as jest.Mock;
+    render(<UsersPage />);
+    await waitFor(() => expect(refreshMock).toHaveBeenCalled());
+    // AuthProvider (mocked away here) is what actually redirects once
+    // refresh() resolves to a null user - this page only has to hand off.
+    expect(pushMock).not.toHaveBeenCalledWith("/login");
+  });
 });

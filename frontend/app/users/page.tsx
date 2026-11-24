@@ -18,7 +18,7 @@ type User = {
 
 export default function UsersPage() {
   const router = useRouter();
-  const { user, loading } = useAuth();
+  const { user, loading, refresh } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -30,6 +30,16 @@ export default function UsersPage() {
 
   async function loadUsers() {
     const response = await fetch(`${API_BASE_URL}/api/users`, { credentials: "include" });
+    if (response.status === 401) {
+      // The session expired while this page was open (e.g. the backend
+      // restarted, or an admin deactivated this account from elsewhere).
+      // AuthProvider's own effect does the actual redirect to /login once
+      // refresh() resolves to a null user - without this, a mutation whose
+      // own request also 401s (create/toggle below) would otherwise fail
+      // completely silently, since both ignore their response today.
+      await refresh();
+      return;
+    }
     if (response.ok) {
       setUsers(await response.json());
     }
@@ -37,7 +47,8 @@ export default function UsersPage() {
 
   useEffect(() => {
     if (loading) return;
-    if (!user || user.role !== "ADMIN") {
+    if (!user) return; // AuthProvider redirects to /login for this case.
+    if (user.role !== "ADMIN") {
       router.push("/");
       return;
     }
