@@ -72,6 +72,19 @@ export default function PropertyEditView({ id }: { id: string }) {
     setSaved(false);
   }
 
+  // Final-review fix: Number("") is 0, so a plain `setField(key,
+  // Number(event.target.value))` turned "the user cleared this box" into
+  // "the user set this to zero" and silently saved it as a real value.
+  // Ignoring the change while the box is empty means a mid-edit clear (on
+  // the way to typing a new number) doesn't write anything until a real
+  // digit is entered - UpdatePropertyRequest has no way to explicitly null
+  // a field out through PATCH anyway, so there's no "intentionally blank"
+  // state this could send even if it tried.
+  function setNumericField<K extends FieldKey>(key: K, rawValue: string) {
+    if (rawValue === "") return;
+    setField(key, Number(rawValue) as UpdatePropertyInput[K]);
+  }
+
   async function handleSave(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
@@ -179,7 +192,7 @@ export default function PropertyEditView({ id }: { id: string }) {
           id="price"
           type="number"
           value={fields.price ?? ""}
-          onChange={(event) => setField("price", Number(event.target.value))}
+          onChange={(event) => setNumericField("price", event.target.value)}
         />
 
         <label htmlFor="areaM2">Area (m²)</label>
@@ -187,7 +200,7 @@ export default function PropertyEditView({ id }: { id: string }) {
           id="areaM2"
           type="number"
           value={fields.areaM2 ?? ""}
-          onChange={(event) => setField("areaM2", Number(event.target.value))}
+          onChange={(event) => setNumericField("areaM2", event.target.value)}
         />
 
         <label htmlFor="rooms">Rooms</label>
@@ -195,7 +208,7 @@ export default function PropertyEditView({ id }: { id: string }) {
           id="rooms"
           type="number"
           value={fields.rooms ?? ""}
-          onChange={(event) => setField("rooms", Number(event.target.value))}
+          onChange={(event) => setNumericField("rooms", event.target.value)}
         />
 
         <label htmlFor="bathrooms">Bathrooms</label>
@@ -203,7 +216,7 @@ export default function PropertyEditView({ id }: { id: string }) {
           id="bathrooms"
           type="number"
           value={fields.bathrooms ?? ""}
-          onChange={(event) => setField("bathrooms", Number(event.target.value))}
+          onChange={(event) => setNumericField("bathrooms", event.target.value)}
         />
 
         <label htmlFor="yearBuilt">Year built</label>
@@ -211,7 +224,7 @@ export default function PropertyEditView({ id }: { id: string }) {
           id="yearBuilt"
           type="number"
           value={fields.yearBuilt ?? ""}
-          onChange={(event) => setField("yearBuilt", Number(event.target.value))}
+          onChange={(event) => setNumericField("yearBuilt", event.target.value)}
         />
 
         <label htmlFor="energyRating">Energy rating</label>

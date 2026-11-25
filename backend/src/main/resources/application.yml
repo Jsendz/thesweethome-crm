@@ -5,16 +5,28 @@ server:
     session:
       cookie:
         name: SESSION
+  error:
+    # Final-review fix: Spring Boot's default (never) strips "message" from
+    # every error JSON body, so frontend/lib/properties.ts's uploadMedia -
+    # which reads that field to show the real reason a file was rejected -
+    # always fell back to its generic message. Every message this backend
+    # sets on a ResponseStatusException is one we wrote ourselves for the
+    # user to read (e.g. "File x.png is not a decodable image"), so it's
+    # safe to always include.
+    include-message: always
 spring:
   application:
     name: crm-backend
   servlet:
     multipart:
-      # 20MB is the per-file cap Task 4's bulk media upload enforces itself
-      # (and rejects with 400 before touching the pipeline); max-request-size
-      # covers up to 30 such files in one request plus form-field overhead.
-      max-file-size: 20MB
-      max-request-size: 650MB
+      # Final-review fix: Spring's own multipart limit must sit strictly
+      # above PropertyMediaController's 20MB-per-file cap, or Spring rejects
+      # an oversized part itself (a 413, bypassing the controller entirely)
+      # before the controller's own check - and its own clean "File X
+      # exceeds the 20MB limit" 400 - ever gets a chance to run. 21MB gives
+      # just enough headroom for that check to always be the one that fires.
+      max-file-size: 21MB
+      max-request-size: 660MB
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5435}/${DB_NAME:crm}
     username: ${DB_USER:crm}

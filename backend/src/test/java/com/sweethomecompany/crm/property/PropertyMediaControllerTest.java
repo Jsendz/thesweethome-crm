@@ -12,6 +12,10 @@ import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.*;
+// Explicit import required: this package declares its own MediaType enum,
+// which would otherwise shadow Spring's MediaType used below - a
+// same-package type always wins over a wildcard import.
+import org.springframework.http.MediaType;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -67,8 +71,9 @@ class PropertyMediaControllerTest {
     // Same reasoning as PropertyControllerTest: real HTTP calls off-thread,
     // so @Transactional rollback doesn't apply - clean up by reference code.
     private static final List<String> TEST_REFERENCE_CODES = List.of(
-            "PM-UPLOAD-OK", "PM-BAD-FILE", "PM-VIDEO", "PM-TOO-MANY",
-            "PM-PARTIAL-FAIL", "PM-DELETE", "PM-REORDER", "PM-REORDER-BAD");
+            "PM-UPLOAD-OK", "PM-BAD-FILE", "PM-VIDEO", "PM-TOO-MANY", "PM-TOO-BIG",
+            "PM-PARTIAL-FAIL", "PM-DELETE", "PM-REORDER", "PM-REORDER-BAD",
+            "PM-REORDER-DUP", "PM-REORDER-MISSING");
 
     @BeforeEach
     @AfterEach
@@ -258,6 +263,27 @@ class PropertyMediaControllerTest {
         assertThat(propertyMediaRepository.findByPropertyIdOrderBySortOrder(propertyId)).isEmpty();
     }
 
+    // Final-review finding (Review Focus gap): nothing previously exercised
+    // the per-file 20MB limit at all. Also exercises the related fix to
+    // application.yml's spring.servlet.multipart.max-file-size, which used
+    // to equal this controller's own cap exactly - meaning Spring's filter
+    // rejected an oversized part with its own 413 before this 400 check
+    // ever ran.
+    @Test
+    void uploadingAFileOverTwentyMegabytesReturns400() {
+        Session admin = loginAsAdmin();
+        UUID propertyId = createProperty(admin, "PM-TOO-BIG");
+        byte[] tooLarge = new byte[21 * 1024 * 1024];
+
+        MultiValueMap<String, Object> files = new LinkedMultiValueMap<>();
+        files.add("files", fileResource(tooLarge, "huge.jpg"));
+
+        ResponseEntity<String> response = upload(admin, propertyId, "PHOTO", files);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(propertyMediaRepository.findByPropertyIdOrderBySortOrder(propertyId)).isEmpty();
+    }
+
     @Test
     void whenOneFileInABatchFailsNoMediaRowsAreCreatedAndAnyAlreadyUploadedObjectIsDeleted() throws Exception {
         Session admin = loginAsAdmin();
@@ -310,7 +336,11 @@ class PropertyMediaControllerTest {
 
         HttpResponse<String> afterDelete = http.send(
                 HttpRequest.newBuilder(URI.create(someVariantUrl)).GET().build(), HttpResponse.BodyHandlers.ofString());
-        assertThat(afterDelete.statusCode()).isEqualTo(404);
+        // Final-review fix: the bucket policy grants only s3:GetObject, not
+        // s3:ListBucket, so MinIO can legitimately answer a missing key with
+        // 403 AccessDenied instead of 404 (same reasoning as
+        // ObjectStorageServiceTest).
+        assertThat(afterDelete.statusCode()).isIn(403, 404);
     }
 
     @Test
@@ -362,5 +392,62 @@ class PropertyMediaControllerTest {
         assertThat(reorderResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
 
         deleteMedia(admin, propertyId, onlyId);
+    }
+
+    // Final-review finding (Review Focus gap): the existing reorder-rejection
+    // test only covered "a stray unknown id plus the wrong list size" -
+    // a duplicate of an existing id (same size as the real set, but not a
+    // valid permutation of it) was never exercised on its own.
+    @Test
+    void reorderingWithADuplicateMediaIdReturns400() throws Exception {
+        Session admin = loginAsAdmin();
+        UUID propertyId = createProperty(admin, "PM-REORDER-DUP");
+        byte[] photo = realPhotoBytes();
+
+        MultiValueMap<String, Object> files = new LinkedMultiValueMap<>();
+        files.add("files", fileResource(photo, "a.jpg"));
+        files.add("files", fileResource(photo, "b.jpg"));
+        ResponseEntity<String> uploadResponse = upload(admin, propertyId, "PHOTO", files);
+        List<Map<String, Object>> media = parseMediaList(uploadResponse.getBody());
+        UUID firstId = UUID.fromString((String) media.get(0).get("id"));
+        UUID secondId = UUID.fromString((String) media.get(1).get("id"));
+
+        String orderJson = objectMapper.writeValueAsString(Map.of("mediaIdsInOrder", List.of(firstId, firstId)));
+        ResponseEntity<String> reorderResponse = restTemplate.exchange(
+                "/api/properties/" + propertyId + "/media/order", HttpMethod.PATCH,
+                new HttpEntity<>(orderJson, authedHeaders(admin)), String.class);
+
+        assertThat(reorderResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+        deleteMedia(admin, propertyId, firstId);
+        deleteMedia(admin, propertyId, secondId);
+    }
+
+    // Final-review finding (Review Focus gap): a list that's a strict subset
+    // of the property's current media ids (missing one, no stray id) was
+    // never exercised on its own either.
+    @Test
+    void reorderingWithAMissingMediaIdReturns400() throws Exception {
+        Session admin = loginAsAdmin();
+        UUID propertyId = createProperty(admin, "PM-REORDER-MISSING");
+        byte[] photo = realPhotoBytes();
+
+        MultiValueMap<String, Object> files = new LinkedMultiValueMap<>();
+        files.add("files", fileResource(photo, "a.jpg"));
+        files.add("files", fileResource(photo, "b.jpg"));
+        ResponseEntity<String> uploadResponse = upload(admin, propertyId, "PHOTO", files);
+        List<Map<String, Object>> media = parseMediaList(uploadResponse.getBody());
+        UUID firstId = UUID.fromString((String) media.get(0).get("id"));
+        UUID secondId = UUID.fromString((String) media.get(1).get("id"));
+
+        String orderJson = objectMapper.writeValueAsString(Map.of("mediaIdsInOrder", List.of(firstId)));
+        ResponseEntity<String> reorderResponse = restTemplate.exchange(
+                "/api/properties/" + propertyId + "/media/order", HttpMethod.PATCH,
+                new HttpEntity<>(orderJson, authedHeaders(admin)), String.class);
+
+        assertThat(reorderResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+        deleteMedia(admin, propertyId, firstId);
+        deleteMedia(admin, propertyId, secondId);
     }
 }

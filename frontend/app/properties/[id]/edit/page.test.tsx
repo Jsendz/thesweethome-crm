@@ -66,6 +66,20 @@ describe("Edit listing page", () => {
     expect(await screen.findByText(/saved/i)).toBeInTheDocument();
   });
 
+  // Final-review regression test: Number("") is 0, so clearing a number
+  // field used to be saved as an explicit 0 instead of being treated as
+  // "nothing changed yet".
+  it("does not save 0 when a number field is cleared without entering a new value", async () => {
+    (updateProperty as jest.Mock).mockResolvedValue(PROPERTY);
+    render(<PropertyEditView id="abc" />);
+    await waitFor(() => expect(screen.getByLabelText(/reference code/i)).toHaveValue("P-001"));
+
+    fireEvent.change(screen.getByLabelText(/^price/i), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() => expect(updateProperty).toHaveBeenCalledWith("abc", {}));
+  });
+
   it("includes WITHDRAWN as a status option and setting it saves successfully", async () => {
     (updateProperty as jest.Mock).mockResolvedValue({ ...PROPERTY, status: "WITHDRAWN" });
     render(<PropertyEditView id="abc" />);

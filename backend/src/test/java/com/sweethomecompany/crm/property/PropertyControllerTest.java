@@ -10,6 +10,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.*;
+// Explicit import required: this package now declares its own MediaType
+// enum (Task 4), which would otherwise shadow Spring's MediaType used
+// below - a same-package type always wins over a wildcard import.
+import org.springframework.http.MediaType;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 
@@ -40,8 +44,9 @@ class PropertyControllerTest {
     // real HTTP calls, so @Transactional rollback doesn't apply. Clean up by
     // the reference codes these tests create, translations first (FK).
     private static final List<String> TEST_REFERENCE_CODES = List.of(
-            "P-001", "P-DUPE", "P-NO-CA", "P-BAD-PRICE", "P-GET", "P-404-PROOF",
-            "P-LIST-A", "P-LIST-B", "P-UPDATE", "P-CA-EDIT", "P-TRANSLATE", "P-CA-REJECT");
+            "P-001", "P-DUPE", "P-NO-CA", "P-BAD-PRICE", "P-NEGATIVE-PRICE", "P-NO-PRICE", "P-GET", "P-404-PROOF",
+            "P-LIST-A", "P-LIST-B", "P-UPDATE", "P-BAD-PATCH-PRICE", "P-CA-EDIT", "P-TRANSLATE", "P-CA-REJECT",
+            "P-DUPE-TARGET", "P-DUPE-SOURCE", "P-BLANK-PATCH", "P-PARISH-ONLY");
 
     @BeforeEach
     @AfterEach
@@ -152,6 +157,55 @@ class PropertyControllerTest {
         assertThat(propertyRepository.findByAgencyIdAndReferenceCode(defaultAgencyId, "P-BAD-PRICE")).isEmpty();
     }
 
+    // Final-review finding (Review Focus gap): the existing "zero or
+    // negative price" test only ever sent price:0 - negative and missing
+    // price were never actually exercised on create, nor was price<=0 ever
+    // tested on PATCH.
+    @Test
+    void creatingWithANegativePriceReturns400() {
+        Session admin = loginAsAdmin();
+        String createJson = """
+                {"referenceCode":"P-NEGATIVE-PRICE","propertyType":"LAND","operation":"SALE",
+                 "price":-500,"caTitle":"Terreny"}""";
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                "/api/properties", new HttpEntity<>(createJson, authedHeaders(admin)), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(propertyRepository.findByAgencyIdAndReferenceCode(defaultAgencyId, "P-NEGATIVE-PRICE")).isEmpty();
+    }
+
+    @Test
+    void creatingWithoutAPriceReturns400() {
+        Session admin = loginAsAdmin();
+        String createJson = """
+                {"referenceCode":"P-NO-PRICE","propertyType":"LAND","operation":"SALE","caTitle":"Terreny"}""";
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                "/api/properties", new HttpEntity<>(createJson, authedHeaders(admin)), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(propertyRepository.findByAgencyIdAndReferenceCode(defaultAgencyId, "P-NO-PRICE")).isEmpty();
+    }
+
+    @Test
+    void updatingWithAZeroOrNegativePriceReturns400() {
+        Session admin = loginAsAdmin();
+        restTemplate.postForEntity("/api/properties", new HttpEntity<>("""
+                {"referenceCode":"P-BAD-PATCH-PRICE","propertyType":"APARTMENT","operation":"SALE",
+                 "price":1000,"caTitle":"Original"}""", authedHeaders(admin)), String.class);
+        Property saved = propertyRepository.findByAgencyIdAndReferenceCode(defaultAgencyId, "P-BAD-PATCH-PRICE")
+                .orElseThrow();
+
+        ResponseEntity<String> response = restTemplate.exchange(
+                "/api/properties/" + saved.getId(), HttpMethod.PATCH,
+                new HttpEntity<>("{\"price\":-1}", authedHeaders(admin)), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        Property reloaded = propertyRepository.findById(saved.getId()).orElseThrow();
+        assertThat(reloaded.getPrice()).isEqualByComparingTo(java.math.BigDecimal.valueOf(1000));
+    }
+
     @Test
     void gettingAnExistingPropertyReturnsItWithItsCaTranslation() {
         Session admin = loginAsAdmin();
@@ -219,6 +273,82 @@ class PropertyControllerTest {
                         && row.getEntityId().equals(saved.getId())
                         && row.getDetail() != null
                         && row.getDetail().contains("WITHDRAWN")))
+                .isTrue();
+    }
+
+    // Final-review finding: changing a property's referenceCode to one
+    // already used by another property hit the unique index at commit time
+    // (after this method had already returned 200), surfacing as a bare 500
+    // instead of the 409 create() already gives for the same conflict.
+    @Test
+    void updatingToAReferenceCodeAlreadyUsedByAnotherPropertyReturns409() {
+        Session admin = loginAsAdmin();
+        restTemplate.postForEntity("/api/properties", new HttpEntity<>("""
+                {"referenceCode":"P-DUPE-TARGET","propertyType":"APARTMENT","operation":"SALE",
+                 "price":1000,"caTitle":"Target"}""", authedHeaders(admin)), String.class);
+        restTemplate.postForEntity("/api/properties", new HttpEntity<>("""
+                {"referenceCode":"P-DUPE-SOURCE","propertyType":"APARTMENT","operation":"SALE",
+                 "price":1000,"caTitle":"Source"}""", authedHeaders(admin)), String.class);
+        Property source = propertyRepository.findByAgencyIdAndReferenceCode(defaultAgencyId, "P-DUPE-SOURCE")
+                .orElseThrow();
+
+        ResponseEntity<String> response = restTemplate.exchange(
+                "/api/properties/" + source.getId(), HttpMethod.PATCH,
+                new HttpEntity<>("{\"referenceCode\":\"P-DUPE-TARGET\"}", authedHeaders(admin)), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        Property reloaded = propertyRepository.findById(source.getId()).orElseThrow();
+        assertThat(reloaded.getReferenceCode()).isEqualTo("P-DUPE-SOURCE");
+    }
+
+    // Final-review finding: a present-but-blank referenceCode/caTitle used to
+    // be written as-is through PATCH, silently undoing create()'s own
+    // required-field validation for the same fields.
+    @Test
+    void updatingWithABlankReferenceCodeOrCatalanTitleReturns400() {
+        Session admin = loginAsAdmin();
+        restTemplate.postForEntity("/api/properties", new HttpEntity<>("""
+                {"referenceCode":"P-BLANK-PATCH","propertyType":"APARTMENT","operation":"SALE",
+                 "price":1000,"caTitle":"Original"}""", authedHeaders(admin)), String.class);
+        Property saved = propertyRepository.findByAgencyIdAndReferenceCode(defaultAgencyId, "P-BLANK-PATCH")
+                .orElseThrow();
+
+        ResponseEntity<String> blankReferenceCode = restTemplate.exchange(
+                "/api/properties/" + saved.getId(), HttpMethod.PATCH,
+                new HttpEntity<>("{\"referenceCode\":\"\"}", authedHeaders(admin)), String.class);
+        ResponseEntity<String> blankCaTitle = restTemplate.exchange(
+                "/api/properties/" + saved.getId(), HttpMethod.PATCH,
+                new HttpEntity<>("{\"caTitle\":\"\"}", authedHeaders(admin)), String.class);
+
+        assertThat(blankReferenceCode.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(blankCaTitle.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        Property reloaded = propertyRepository.findById(saved.getId()).orElseThrow();
+        assertThat(reloaded.getReferenceCode()).isEqualTo("P-BLANK-PATCH");
+    }
+
+    // Final-review finding: fields other than referenceCode/propertyType/
+    // operation/status/price were applied without being recorded in
+    // `changes`, so an update touching only one of them (e.g. just the
+    // parish) wrote no audit row at all.
+    @Test
+    void updatingOnlyTheParishWritesAnUpdateAuditRow() {
+        Session admin = loginAsAdmin();
+        restTemplate.postForEntity("/api/properties", new HttpEntity<>("""
+                {"referenceCode":"P-PARISH-ONLY","propertyType":"APARTMENT","operation":"SALE",
+                 "price":1000,"caTitle":"Original","parish":"Encamp"}""", authedHeaders(admin)), String.class);
+        Property saved = propertyRepository.findByAgencyIdAndReferenceCode(defaultAgencyId, "P-PARISH-ONLY")
+                .orElseThrow();
+
+        ResponseEntity<String> response = restTemplate.exchange(
+                "/api/properties/" + saved.getId(), HttpMethod.PATCH,
+                new HttpEntity<>("{\"parish\":\"Ordino\"}", authedHeaders(admin)), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(auditLogRepository.findAll().stream()
+                .anyMatch(row -> row.getAction() == AuditAction.UPDATE
+                        && row.getEntityId().equals(saved.getId())
+                        && row.getDetail() != null
+                        && row.getDetail().contains("Ordino")))
                 .isTrue();
     }
 

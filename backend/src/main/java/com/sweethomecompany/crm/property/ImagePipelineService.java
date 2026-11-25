@@ -4,11 +4,16 @@ import net.coobird.thumbnailator.Thumbnails;
 import org.springframework.stereotype.Component;
 
 import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
+import java.awt.Color;
+import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +43,15 @@ public class ImagePipelineService {
         SIZES.put("full_detail", 3000);
     }
 
+    // Comfortably above anything a real estate listing photo or floorplan
+    // export would legitimately be (a 45-megapixel medium-format camera is
+    // ~8200x5500), while still bounding how large a decode this service will
+    // ever attempt - checked from the file header alone (see
+    // assertSaneDimensions), before any pixel data is actually decoded, so a
+    // small file that lies about having an enormous width/height can't be
+    // used to exhaust heap.
+    private static final long MAX_DECODED_PIXELS = 40_000_000L;
+
     private final boolean webpAvailable;
 
     public ImagePipelineService() {
@@ -49,6 +63,8 @@ public class ImagePipelineService {
     }
 
     public List<Variant> process(byte[] originalImageBytes) throws IOException {
+        assertSaneDimensions(originalImageBytes);
+
         BufferedImage original = ImageIO.read(new ByteArrayInputStream(originalImageBytes));
         if (original == null) {
             throw new IOException("Could not decode image bytes - unsupported or corrupt image data");
@@ -63,7 +79,7 @@ public class ImagePipelineService {
                     .size(maxDimension, maxDimension)
                     .asBufferedImage();
 
-            variants.add(new Variant(size, "jpeg", encode(resized, "jpeg")));
+            variants.add(new Variant(size, "jpeg", encodeJpeg(resized)));
 
             if (webpAvailable) {
                 variants.add(new Variant(size, "webp", encode(resized, "webp")));
@@ -72,9 +88,50 @@ public class ImagePipelineService {
         return variants;
     }
 
+    private static void assertSaneDimensions(byte[] originalImageBytes) throws IOException {
+        try (ImageInputStream input = ImageIO.createImageInputStream(new ByteArrayInputStream(originalImageBytes))) {
+            if (input == null) {
+                throw new IOException("Could not decode image bytes - unsupported or corrupt image data");
+            }
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(input);
+            if (!readers.hasNext()) {
+                throw new IOException("Could not decode image bytes - unsupported or corrupt image data");
+            }
+            ImageReader reader = readers.next();
+            try {
+                reader.setInput(input);
+                int width = reader.getWidth(0);
+                int height = reader.getHeight(0);
+                if ((long) width * height > MAX_DECODED_PIXELS) {
+                    throw new IOException("Image dimensions " + width + "x" + height
+                            + " exceed the maximum of " + MAX_DECODED_PIXELS + " pixels");
+                }
+            } finally {
+                reader.dispose();
+            }
+        }
+    }
+
+    // JPEG has no alpha channel. ImageIO's JPEG writer silently writes zero
+    // bytes (rather than erroring) for a source type other than plain RGB -
+    // observed with TYPE_INT_ARGB, as produced by PNG screenshots and many
+    // floorplan exports - so flatten onto an opaque white RGB canvas first.
+    private static byte[] encodeJpeg(BufferedImage image) throws IOException {
+        BufferedImage rgb = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_RGB);
+        Graphics2D graphics = rgb.createGraphics();
+        graphics.setColor(Color.WHITE);
+        graphics.fillRect(0, 0, image.getWidth(), image.getHeight());
+        graphics.drawImage(image, 0, 0, null);
+        graphics.dispose();
+        return encode(rgb, "jpeg");
+    }
+
     private static byte[] encode(BufferedImage image, String formatName) throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        ImageIO.write(image, formatName, out);
+        boolean wrote = ImageIO.write(image, formatName, out);
+        if (!wrote || out.size() == 0) {
+            throw new IOException("No " + formatName + " encoder produced output for this image");
+        }
         return out.toByteArray();
     }
 

@@ -41,6 +41,10 @@ class ObjectStorageServiceTest {
         HttpResponse<String> afterDelete = http.send(
                 HttpRequest.newBuilder(URI.create(url)).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
-        assertThat(afterDelete.statusCode()).isEqualTo(404);
+        // Final-review fix: the bucket policy (MinioBucketInitializer) grants
+        // only s3:GetObject, not s3:ListBucket, so MinIO/S3 can legitimately
+        // answer an anonymous GET for a missing key with 403 AccessDenied
+        // instead of 404 NotFound, to avoid leaking which keys exist.
+        assertThat(afterDelete.statusCode()).isIn(403, 404);
     }
 }

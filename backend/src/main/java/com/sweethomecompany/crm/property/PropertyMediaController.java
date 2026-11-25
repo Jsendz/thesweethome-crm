@@ -133,9 +133,20 @@ public class PropertyMediaController {
                 media.setUploadedAt(Instant.now());
                 newMedia.add(media);
             }
-        } catch (ResponseStatusException e) {
+        } catch (RuntimeException e) {
+            // Broadened from catching only ResponseStatusException: an MinIO
+            // hiccup mid-batch (S3Exception/SdkClientException) or any other
+            // unexpected failure must still trigger cleanup of whatever this
+            // request already uploaded, not just the "bad file" case. Each
+            // delete is best-effort so one failed cleanup doesn't stop the
+            // rest, or hide the original failure behind a cleanup failure.
             for (String key : uploadedKeys) {
-                objectStorageService.delete(key);
+                try {
+                    objectStorageService.delete(key);
+                } catch (RuntimeException cleanupFailure) {
+                    // Nothing more we can do here; the original failure
+                    // below is still what the caller needs to see.
+                }
             }
             throw e;
         }
