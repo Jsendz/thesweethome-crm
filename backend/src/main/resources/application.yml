@@ -8,6 +8,13 @@ server:
 spring:
   application:
     name: crm-backend
+  servlet:
+    multipart:
+      # 20MB is the per-file cap Task 4's bulk media upload enforces itself
+      # (and rejects with 400 before touching the pipeline); max-request-size
+      # covers up to 30 such files in one request plus form-field overhead.
+      max-file-size: 20MB
+      max-request-size: 650MB
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5435}/${DB_NAME:crm}
     username: ${DB_USER:crm}

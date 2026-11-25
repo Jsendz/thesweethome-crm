@@ -36,6 +36,7 @@ public class PropertyController {
 
     private final PropertyRepository propertyRepository;
     private final PropertyTranslationRepository propertyTranslationRepository;
+    private final PropertyMediaRepository propertyMediaRepository;
     private final AuditLogService auditLogService;
     private final ObjectMapper objectMapper;
     private final UUID defaultAgencyId;
@@ -43,11 +44,13 @@ public class PropertyController {
     public PropertyController(
             PropertyRepository propertyRepository,
             PropertyTranslationRepository propertyTranslationRepository,
+            PropertyMediaRepository propertyMediaRepository,
             AuditLogService auditLogService,
             ObjectMapper objectMapper,
             @Value("${app.default-agency-id}") UUID defaultAgencyId) {
         this.propertyRepository = propertyRepository;
         this.propertyTranslationRepository = propertyTranslationRepository;
+        this.propertyMediaRepository = propertyMediaRepository;
         this.auditLogService = auditLogService;
         this.objectMapper = objectMapper;
         this.defaultAgencyId = defaultAgencyId;
@@ -119,19 +122,25 @@ public class PropertyController {
         auditLogService.log(defaultAgencyId, actor.getId(), AuditAction.CREATE, "PROPERTY", saved.getId(), null);
 
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(PropertyResponse.from(saved, List.of(translation)));
+                .body(PropertyResponse.from(saved, List.of(translation), List.of()));
     }
 
     @GetMapping
     public List<PropertySummaryResponse> list() {
-        return propertyRepository.findAll().stream().map(PropertySummaryResponse::from).toList();
+        return propertyRepository.findAll().stream()
+                .map(property -> PropertySummaryResponse.from(
+                        property, propertyMediaRepository.findByPropertyIdOrderBySortOrder(property.getId())))
+                .toList();
     }
 
     @GetMapping("/{id}")
     public PropertyResponse get(@PathVariable UUID id) {
         Property property = propertyRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
-        return PropertyResponse.from(property, propertyTranslationRepository.findByPropertyId(id));
+        return PropertyResponse.from(
+                property,
+                propertyTranslationRepository.findByPropertyId(id),
+                propertyMediaRepository.findByPropertyIdOrderBySortOrder(id));
     }
 
     @PatchMapping("/{id}")
@@ -224,7 +233,10 @@ public class PropertyController {
             auditLogService.log(defaultAgencyId, actor.getId(), AuditAction.UPDATE, "PROPERTY", id, toJson(changes));
         }
 
-        return PropertyResponse.from(saved, propertyTranslationRepository.findByPropertyId(id));
+        return PropertyResponse.from(
+                saved,
+                propertyTranslationRepository.findByPropertyId(id),
+                propertyMediaRepository.findByPropertyIdOrderBySortOrder(id));
     }
 
     @PostMapping("/{id}/translations")
@@ -248,7 +260,10 @@ public class PropertyController {
         translation.setDescription(request.description());
         propertyTranslationRepository.save(translation);
 
-        return PropertyResponse.from(property, propertyTranslationRepository.findByPropertyId(id));
+        return PropertyResponse.from(
+                property,
+                propertyTranslationRepository.findByPropertyId(id),
+                propertyMediaRepository.findByPropertyIdOrderBySortOrder(id));
     }
 
     private String toJson(Map<String, Object> changes) {

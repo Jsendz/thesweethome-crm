@@ -27,19 +27,15 @@ public record PropertyResponse(
         boolean isExclusive,
         LocalDate exclusivityEndDate,
         List<TranslationResponse> translations,
-        List<Object> media,
+        List<MediaResponse> media,
         Instant createdAt,
         Instant updatedAt) {
 
     public record TranslationResponse(String locale, String title, String description) {
     }
 
-    /**
-     * Task 4 changes the {@code media} parameter's type to
-     * {@code List<MediaResponse>} and populates it from
-     * PropertyMediaRepository; it's always an empty list until then.
-     */
-    public static PropertyResponse from(Property property, List<PropertyTranslation> translations) {
+    public static PropertyResponse from(
+            Property property, List<PropertyTranslation> translations, List<PropertyMedia> media) {
         return new PropertyResponse(
                 property.getId(),
                 property.getReferenceCode(),
@@ -63,7 +59,7 @@ public record PropertyResponse(
                 translations.stream()
                         .map(t -> new TranslationResponse(t.getLocale(), t.getTitle(), t.getDescription()))
                         .toList(),
-                List.of(),
+                media.stream().map(MediaResponse::from).toList(),
                 property.getCreatedAt(),
                 property.getUpdatedAt());
     }

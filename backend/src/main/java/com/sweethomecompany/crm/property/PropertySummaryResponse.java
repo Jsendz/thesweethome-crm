@@ -1,6 +1,8 @@
 package com.sweethomecompany.crm.property;
 
 import java.math.BigDecimal;
+import java.util.Comparator;
+import java.util.List;
 import java.util.UUID;
 
 public record PropertySummaryResponse(
@@ -13,10 +15,20 @@ public record PropertySummaryResponse(
         String thumbnailUrl) {
 
     /**
-     * thumbnailUrl is always null until Task 4 adds property_media and
-     * updates this mapping to pull the first photo's thumbnail variant.
+     * thumbnailUrl comes from the first photo (lowest sortOrder), preferring
+     * its JPEG thumbnail variant and falling back to WebP if that's all a
+     * particular upload has; null if the property has no media yet.
      */
-    public static PropertySummaryResponse from(Property property) {
+    public static PropertySummaryResponse from(Property property, List<PropertyMedia> media) {
+        String thumbnailUrl = media.stream()
+                .min(Comparator.comparingInt(PropertyMedia::getSortOrder))
+                .map(first -> {
+                    var variants = first.getVariants();
+                    String jpeg = variants.get("thumbnail_jpeg");
+                    return jpeg != null ? jpeg : variants.get("thumbnail_webp");
+                })
+                .orElse(null);
+
         return new PropertySummaryResponse(
                 property.getId(),
                 property.getReferenceCode(),
@@ -24,6 +36,6 @@ public record PropertySummaryResponse(
                 property.getOperation(),
                 property.getStatus(),
                 property.getPrice(),
-                null);
+                thumbnailUrl);
     }
 }
