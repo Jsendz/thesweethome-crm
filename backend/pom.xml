@@ -19,6 +19,12 @@
 
   <properties>
     <java.version>21</java.version>
+    <!-- AWS SDK 2.46.x's apache5-client is built against httpclient5 5.6 /
+         httpcore5 5.4 (it needs TlsSocketStrategy, added in 5.4). Spring
+         Boot 3.3's BOM pins the older 5.3.1 / 5.2.5, which makes S3Client
+         construction fail with NoClassDefFoundError. Match the SDK. -->
+    <httpclient5.version>5.6.1</httpclient5.version>
+    <httpcore5.version>5.4.2</httpcore5.version>
   </properties>
 
   <dependencies>
@@ -84,13 +90,15 @@
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
     </dependency>
-    <!-- TestRestTemplate otherwise falls back to the JDK HttpURLConnection,
-         which silently drops the restricted Origin header (breaks
-         CorsConfigTest). -->
+    <!-- Compile scope, not test: the S3 client (apache5-client) needs it at
+         runtime, and a test-scoped declaration here would win Maven's
+         nearest-wins scope mediation and drop it from the packaged app.
+         Also used by TestRestTemplate, which otherwise falls back to the
+         JDK HttpURLConnection and silently drops the restricted Origin
+         header (breaks CorsConfigTest). -->
     <dependency>
       <groupId>org.apache.httpcomponents.client5</groupId>
       <artifactId>httpclient5</artifactId>
-      <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.springframework.security</groupId>
