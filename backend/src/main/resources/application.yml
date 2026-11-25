@@ -19,6 +19,13 @@ app:
   admin:
     email: ${ADMIN_EMAIL:admin@example.com}
     password: ${ADMIN_PASSWORD:change-me-now}
+storage:
+  s3:
+    endpoint: ${STORAGE_S3_ENDPOINT:http://localhost:9000}
+    bucket: ${STORAGE_S3_BUCKET:crm-media}
+    access-key: ${MINIO_ROOT_USER:crm}
+    secret-key: ${MINIO_ROOT_PASSWORD:crm_dev_only}
+    public-base-url: ${STORAGE_S3_PUBLIC_BASE_URL:http://localhost:9000/crm-media}
 management:
   endpoints:
     web:
