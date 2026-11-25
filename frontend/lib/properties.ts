@@ -97,6 +97,98 @@ export async function fetchProperty(id: string): Promise<PropertyDetail> {
   return response.json();
 }
 
+export type UpdatePropertyInput = Partial<CreatePropertyInput> & { status?: PropertyStatus };
+
+export async function updateProperty(id: string, data: UpdatePropertyInput): Promise<PropertyDetail> {
+  const response = await fetch(`${API_BASE_URL}/api/properties/${id}`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-XSRF-TOKEN": getCsrfToken() ?? "",
+    },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    throw new Error("Could not save the listing.");
+  }
+  return response.json();
+}
+
+export async function uploadMedia(
+  propertyId: string,
+  mediaType: "PHOTO" | "FLOORPLAN",
+  files: File[],
+): Promise<Media[]> {
+  const formData = new FormData();
+  files.forEach((file) => formData.append("files", file));
+  const response = await fetch(`${API_BASE_URL}/api/properties/${propertyId}/media?mediaType=${mediaType}`, {
+    method: "POST",
+    credentials: "include",
+    // No Content-Type here: the browser sets multipart/form-data with the
+    // correct boundary itself when the body is a FormData instance.
+    headers: { "X-XSRF-TOKEN": getCsrfToken() ?? "" },
+    body: formData,
+  });
+  if (!response.ok) {
+    // Spring's default error body for a ResponseStatusException is JSON
+    // with a "message" field holding the reason we passed it
+    // (PropertyMediaController's 400s all set one) - surface that verbatim
+    // rather than a generic string, falling back if the body isn't JSON.
+    let message = "Could not upload the selected files.";
+    try {
+      const body = await response.json();
+      if (typeof body?.message === "string" && body.message) {
+        message = body.message;
+      }
+    } catch {
+      // Not JSON - keep the generic message.
+    }
+    throw new Error(message);
+  }
+  return response.json();
+}
+
+export async function deleteMedia(propertyId: string, mediaId: string): Promise<void> {
+  await fetch(`${API_BASE_URL}/api/properties/${propertyId}/media/${mediaId}`, {
+    method: "DELETE",
+    credentials: "include",
+    headers: { "X-XSRF-TOKEN": getCsrfToken() ?? "" },
+  });
+}
+
+export async function reorderMedia(propertyId: string, mediaIdsInOrder: string[]): Promise<void> {
+  await fetch(`${API_BASE_URL}/api/properties/${propertyId}/media/order`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-XSRF-TOKEN": getCsrfToken() ?? "",
+    },
+    body: JSON.stringify({ mediaIdsInOrder }),
+  });
+}
+
+export async function addTranslation(
+  propertyId: string,
+  locale: string,
+  title: string,
+  description?: string,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/properties/${propertyId}/translations`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-XSRF-TOKEN": getCsrfToken() ?? "",
+    },
+    body: JSON.stringify({ locale, title, description }),
+  });
+  if (!response.ok) {
+    throw new Error("Could not save the translation.");
+  }
+}
+
 export async function createProperty(data: CreatePropertyInput): Promise<{ id: string }> {
   const response = await fetch(`${API_BASE_URL}/api/properties`, {
     method: "POST",
