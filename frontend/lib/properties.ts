@@ -51,6 +51,52 @@ export type CreatePropertyInput = {
   caDescription?: string;
 };
 
+// Mirrors the backend's PropertyResponse (see
+// backend/.../property/PropertyResponse.java) field for field.
+export type Translation = {
+  locale: string;
+  title: string;
+  description: string | null;
+};
+
+export type Media = {
+  id: string;
+  mediaType: "PHOTO" | "FLOORPLAN" | "VIDEO" | "VIRTUAL_TOUR";
+  variants: Record<string, string>;
+  sortOrder: number;
+};
+
+export type PropertyDetail = {
+  id: string;
+  referenceCode: string;
+  propertyType: PropertyType;
+  operation: Operation;
+  status: PropertyStatus;
+  addressLine: string | null;
+  parish: string | null;
+  country: string;
+  latitude: number | null;
+  longitude: number | null;
+  price: number;
+  currency: string;
+  areaM2: number | null;
+  rooms: number | null;
+  bathrooms: number | null;
+  yearBuilt: number | null;
+  energyRating: string | null;
+  isExclusive: boolean;
+  exclusivityEndDate: string | null;
+  translations: Translation[];
+  media: Media[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function fetchProperty(id: string): Promise<PropertyDetail> {
+  const response = await fetch(`${API_BASE_URL}/api/properties/${id}`, { credentials: "include" });
+  return response.json();
+}
+
 export async function createProperty(data: CreatePropertyInput): Promise<{ id: string }> {
   const response = await fetch(`${API_BASE_URL}/api/properties`, {
     method: "POST",
