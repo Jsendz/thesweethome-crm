@@ -54,6 +54,96 @@ export async function fetchDeals(): Promise<DealSummary[]> {
   return response.json();
 }
 
+// Mirrors DealSummary - DealResponse is the same shape whether it came
+// from the list or a single-deal fetch.
+export type DealDetail = DealSummary;
+
+export async function fetchDeal(id: string): Promise<DealDetail> {
+  const response = await fetch(`${API_BASE_URL}/api/deals/${id}`, { credentials: "include" });
+  return response.json();
+}
+
+// Mirrors the backend's UpdateDealRequest fields exactly (see
+// backend/.../deal/UpdateDealRequest.java). Every field is optional, same
+// PATCH semantics as UpdateContactInput/UpdatePropertyInput. stage=COLD and
+// stage=CLOSED_LOST each require their own reason field in the same request
+// (see DealController's special-cased validation).
+export type UpdateDealInput = {
+  propertyId?: string;
+  assignedUserId?: string;
+  stage?: DealStage;
+  coldReason?: string;
+  lostReason?: string;
+  expectedCloseDate?: string;
+};
+
+export async function updateDeal(id: string, data: UpdateDealInput): Promise<DealDetail> {
+  const response = await fetch(`${API_BASE_URL}/api/deals/${id}`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-XSRF-TOKEN": getCsrfToken() ?? "",
+    },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    throw new Error("Could not save the deal.");
+  }
+  return response.json();
+}
+
+export type ActivityType = "CALL" | "EMAIL" | "VIEWING" | "MEETING" | "NOTE" | "WHATSAPP";
+export type ActivityStatus = "SCHEDULED" | "COMPLETED" | "CANCELLED" | "NO_SHOW";
+
+// Mirrors the backend's ActivityResponse (see
+// backend/.../deal/ActivityResponse.java) field for field.
+export type ActivityEntry = {
+  id: string;
+  dealId: string;
+  contactId: string | null;
+  propertyId: string | null;
+  userId: string;
+  userFullName: string;
+  activityType: ActivityType;
+  status: ActivityStatus;
+  notes: string | null;
+  occurredAt: string;
+  createdAt: string;
+};
+
+export async function fetchActivities(dealId: string): Promise<ActivityEntry[]> {
+  const response = await fetch(`${API_BASE_URL}/api/deals/${dealId}/activities`, { credentials: "include" });
+  return response.json();
+}
+
+// Mirrors the backend's CreateActivityRequest fields exactly (see
+// backend/.../deal/CreateActivityRequest.java). activityType/occurredAt are
+// required there; status is optional - the backend defaults it based on
+// activityType when omitted.
+export type LogActivityInput = {
+  activityType: ActivityType;
+  notes?: string;
+  occurredAt: string;
+  status?: ActivityStatus;
+};
+
+export async function logActivity(dealId: string, data: LogActivityInput): Promise<ActivityEntry> {
+  const response = await fetch(`${API_BASE_URL}/api/deals/${dealId}/activities`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-XSRF-TOKEN": getCsrfToken() ?? "",
+    },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    throw new Error("Could not log the activity.");
+  }
+  return response.json();
+}
+
 export async function createDeal(data: CreateDealInput): Promise<{ id: string }> {
   const response = await fetch(`${API_BASE_URL}/api/deals`, {
     method: "POST",
