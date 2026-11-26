@@ -26,6 +26,7 @@ public record PropertyResponse(
         String energyRating,
         boolean isExclusive,
         LocalDate exclusivityEndDate,
+        UUID ownerContactId,
         List<TranslationResponse> translations,
         List<MediaResponse> media,
         Instant createdAt,
@@ -56,6 +57,7 @@ public record PropertyResponse(
                 property.getEnergyRating(),
                 property.isExclusive(),
                 property.getExclusivityEndDate(),
+                property.getOwnerContactId(),
                 translations.stream()
                         .map(t -> new TranslationResponse(t.getLocale(), t.getTitle(), t.getDescription()))
                         .toList(),

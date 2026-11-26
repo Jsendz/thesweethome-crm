@@ -2,6 +2,7 @@ package com.sweethomecompany.crm.property;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.UUID;
 
 /**
  * Required (validated in PropertyController, 400 if missing/blank):
@@ -27,5 +28,6 @@ public record CreatePropertyRequest(
         Boolean isExclusive,
         LocalDate exclusivityEndDate,
         String caTitle,
-        String caDescription) {
+        String caDescription,
+        UUID ownerContactId) {
 }
