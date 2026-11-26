@@ -23,6 +23,7 @@ export function NavBar() {
   return (
     <nav>
       <span>{user.email}</span>
+      <Link href="/properties">Listings</Link>
       {user.role === "ADMIN" && <Link href="/users">Users</Link>}
       <button onClick={handleLogout}>Log out</button>
     </nav>

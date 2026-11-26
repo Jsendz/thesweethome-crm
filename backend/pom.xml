@@ -19,6 +19,12 @@
 
   <properties>
     <java.version>21</java.version>
+    <!-- AWS SDK 2.46.x's apache5-client is built against httpclient5 5.6 /
+         httpcore5 5.4 (it needs TlsSocketStrategy, added in 5.4). Spring
+         Boot 3.3's BOM pins the older 5.3.1 / 5.2.5, which makes S3Client
+         construction fail with NoClassDefFoundError. Match the SDK. -->
+    <httpclient5.version>5.6.1</httpclient5.version>
+    <httpcore5.version>5.4.2</httpcore5.version>
   </properties>
 
   <dependencies>
@@ -52,18 +58,47 @@
       <artifactId>flyway-database-postgresql</artifactId>
     </dependency>
 
+    <!-- Image resize for the property-media pipeline (Phase 3). -->
+    <dependency>
+      <groupId>net.coobird</groupId>
+      <artifactId>thumbnailator</artifactId>
+      <version>0.4.20</version>
+    </dependency>
+    <!-- WebP encode support for the same pipeline. Java/ImageIO has no
+         built-in WebP writer; this is the one actively-maintained library
+         found that can WRITE (not just decode) WebP, and it bundles its
+         own native code. NOTE: the version below is a placeholder — this
+         sandbox cannot reach Maven Central to confirm the current release
+         (confirmed blocked: search.maven.org returns 403 from the agent
+         proxy). Check https://mvnrepository.com/artifact/org.sejda.imageio/webp-imageio
+         for the latest version before building; if resolution fails,
+         bump this to whatever that page lists. -->
+    <dependency>
+      <groupId>org.sejda.imageio</groupId>
+      <artifactId>webp-imageio</artifactId>
+      <version>0.1.6</version>
+    </dependency>
+    <!-- MinIO object storage client (Phase 3, Task 2) via the S3-compatible API. -->
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>s3</artifactId>
+      <version>2.46.7</version>
+    </dependency>
+
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
     </dependency>
-    <!-- TestRestTemplate otherwise falls back to the JDK HttpURLConnection,
-         which silently drops the restricted Origin header (breaks
-         CorsConfigTest). -->
+    <!-- Compile scope, not test: the S3 client (apache5-client) needs it at
+         runtime, and a test-scoped declaration here would win Maven's
+         nearest-wins scope mediation and drop it from the packaged app.
+         Also used by TestRestTemplate, which otherwise falls back to the
+         JDK HttpURLConnection and silently drops the restricted Origin
+         header (breaks CorsConfigTest). -->
     <dependency>
       <groupId>org.apache.httpcomponents.client5</groupId>
       <artifactId>httpclient5</artifactId>
-      <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.springframework.security</groupId>

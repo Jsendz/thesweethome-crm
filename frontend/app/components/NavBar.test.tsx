@@ -23,4 +23,16 @@ describe("NavBar", () => {
     const { container } = render(<NavBar />);
     expect(container).toBeEmptyDOMElement();
   });
+
+  it("shows a Listings link for any logged-in user", () => {
+    (useAuth as jest.Mock).mockReturnValue({ user: { email: "a@b.com", role: "AGENT" }, loading: false });
+    render(<NavBar />);
+    expect(screen.getByRole("link", { name: /listings/i })).toHaveAttribute("href", "/properties");
+  });
+
+  it("shows a Listings link for a manager too", () => {
+    (useAuth as jest.Mock).mockReturnValue({ user: { email: "m@b.com", role: "MANAGER" }, loading: false });
+    render(<NavBar />);
+    expect(screen.getByRole("link", { name: /listings/i })).toBeInTheDocument();
+  });
 });

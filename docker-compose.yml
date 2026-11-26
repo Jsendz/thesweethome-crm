@@ -15,3 +15,22 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+
+  minio:
+    # Official minio/minio is no longer pullable from Docker Hub or quay.io.
+    # Bitnami's image starts the server from its own entrypoint (API :9000,
+    # console :9001, data in /bitnami/minio/data, non-root) — do NOT add the
+    # upstream `command: server /data ...`, it bypasses that setup and fails
+    # with "file access denied".
+    image: bitnamilegacy/minio:latest
+    environment:
+      MINIO_ROOT_USER: crm
+      MINIO_ROOT_PASSWORD: crm_dev_only
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
