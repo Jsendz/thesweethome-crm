@@ -126,6 +126,22 @@ describe("Edit listing page", () => {
     expect(await screen.findByText(/saved/i)).toBeInTheDocument();
   });
 
+  // Final-review fix: same no-way-to-clear PATCH gap as the deal edit
+  // view - selecting "None" after an owner is already set used to save
+  // nothing while still reporting "Saved."
+  it("does not let an already-set owner be cleared to None", async () => {
+    const propertyWithOwner = { ...PROPERTY, ownerContactId: "c1" };
+    (fetchProperty as jest.Mock).mockResolvedValue(propertyWithOwner);
+    render(<PropertyEditView id="abc" />);
+    await waitFor(() => expect((screen.getByLabelText(/^owner/i) as HTMLSelectElement).value).toBe("c1"));
+
+    fireEvent.change(screen.getByLabelText(/^owner/i), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() => expect(updateProperty).toHaveBeenCalledWith("abc", {}));
+    expect((screen.getByLabelText(/^owner/i) as HTMLSelectElement).value).toBe("c1");
+  });
+
   it("renders the PhotoUploader with the property's existing media", async () => {
     render(<PropertyEditView id="abc" />);
 

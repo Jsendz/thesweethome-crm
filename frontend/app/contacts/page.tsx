@@ -41,6 +41,8 @@ export default function ContactsPage() {
               <th>Name</th>
               <th>Type</th>
               <th>Source</th>
+              <th>Phone</th>
+              <th>Email</th>
               <th>Owner agent</th>
             </tr>
           </thead>
@@ -48,10 +50,14 @@ export default function ContactsPage() {
             {contacts.map((contact) => (
               <tr key={contact.id}>
                 <td>
-                  {contact.firstName} {contact.lastName}
+                  <Link href={`/contacts/${contact.id}`}>
+                    {contact.firstName} {contact.lastName}
+                  </Link>
                 </td>
                 <td>{contact.contactType}</td>
                 <td>{contact.source}</td>
+                <td>{contact.phone}</td>
+                <td>{contact.email}</td>
                 <td>{ownerName(contact.ownerUserId)}</td>
               </tr>
             ))}

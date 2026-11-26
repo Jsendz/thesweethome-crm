@@ -52,4 +52,17 @@ describe("Contact edit view", () => {
     await waitFor(() => expect(updateContact).toHaveBeenCalledWith("c1", { notes: "Called back" }));
     expect(await screen.findByText(/saved/i)).toBeInTheDocument();
   });
+
+  // Final-review fix: same missing-field gap as the create form.
+  it("loads the current preferred locale and submits a changed one", async () => {
+    (updateContact as jest.Mock).mockResolvedValue({ ...BASE_CONTACT, preferredLocale: "es" });
+    render(<ContactEditView id="c1" />);
+    await waitFor(() =>
+      expect((screen.getByLabelText(/preferred locale/i) as HTMLSelectElement).value).toBe("ca"));
+
+    fireEvent.change(screen.getByLabelText(/preferred locale/i), { target: { value: "es" } });
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() => expect(updateContact).toHaveBeenCalledWith("c1", { preferredLocale: "es" }));
+  });
 });

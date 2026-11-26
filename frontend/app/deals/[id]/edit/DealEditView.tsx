@@ -38,6 +38,18 @@ export default function DealEditView({ id }: { id: string }) {
     setSaved(false);
   }
 
+  // Final-review fix: UpdateDealInput has no way to express "clear this
+  // field" - omitting a key means "unchanged" to the backend's PATCH
+  // handler, so clearing an already-set property/date used to save
+  // nothing while the form still reported "Saved." Ignoring the attempt
+  // (same convention PropertyEditView's setNumericField already uses for
+  // a cleared number input) keeps the field showing its real value
+  // instead of lying about having cleared it.
+  function setOrIgnoreIfEmpty<K extends FieldKey>(key: K, rawValue: string) {
+    if (rawValue === "") return;
+    setField(key, rawValue as UpdateDealInput[K]);
+  }
+
   async function handleSave(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
@@ -69,7 +81,7 @@ export default function DealEditView({ id }: { id: string }) {
         <select
           id="propertyId"
           value={fields.propertyId ?? ""}
-          onChange={(event) => setField("propertyId", event.target.value || undefined)}
+          onChange={(event) => setOrIgnoreIfEmpty("propertyId", event.target.value)}
         >
           <option value="">None</option>
           {properties.map((property) => (
@@ -97,7 +109,7 @@ export default function DealEditView({ id }: { id: string }) {
           id="expectedCloseDate"
           type="date"
           value={fields.expectedCloseDate ?? ""}
-          onChange={(event) => setField("expectedCloseDate", event.target.value)}
+          onChange={(event) => setOrIgnoreIfEmpty("expectedCloseDate", event.target.value)}
         />
 
         <button type="submit">Save</button>

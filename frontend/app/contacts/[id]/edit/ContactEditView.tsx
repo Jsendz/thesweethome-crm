@@ -13,6 +13,9 @@ import { fetchUserDirectory, UserDirectoryEntry } from "../../../../lib/users";
 
 const CONTACT_TYPES: ContactType[] = ["BUYER", "SELLER", "TENANT", "LANDLORD", "LEAD"];
 const CONTACT_SOURCES: ContactSource[] = ["PORTAL", "WEBSITE", "REFERRAL", "MANUAL", "WALK_IN"];
+// Matches the locales properties can be translated into (design's own
+// `default_locale`/`preferred_locale` columns: "ca, es, fr, en").
+const CONTACT_LOCALES = ["ca", "es", "fr", "en"] as const;
 
 type FieldKey = keyof UpdateContactInput;
 
@@ -130,6 +133,20 @@ export default function ContactEditView({ id }: { id: string }) {
           value={fields.sourceDetail ?? ""}
           onChange={(event) => setField("sourceDetail", event.target.value)}
         />
+
+        <label htmlFor="preferredLocale">Preferred locale</label>
+        <select
+          id="preferredLocale"
+          value={fields.preferredLocale ?? ""}
+          onChange={(event) => setField("preferredLocale", event.target.value)}
+        >
+          <option value="">Unset</option>
+          {CONTACT_LOCALES.map((locale) => (
+            <option key={locale} value={locale}>
+              {locale}
+            </option>
+          ))}
+        </select>
 
         <label htmlFor="notes">Notes</label>
         <textarea id="notes" value={fields.notes ?? ""} onChange={(event) => setField("notes", event.target.value)} />

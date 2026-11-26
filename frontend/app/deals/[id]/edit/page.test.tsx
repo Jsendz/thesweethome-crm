@@ -63,4 +63,34 @@ describe("Deal edit view", () => {
     await waitFor(() => expect(updateDeal).toHaveBeenCalledWith("d1", { assignedUserId: "u2" }));
     expect(await screen.findByText(/saved/i)).toBeInTheDocument();
   });
+
+  // Final-review fix: the PATCH convention here has no way to express
+  // "clear this field" - a missing key means "unchanged", so selecting
+  // "None" silently saved nothing while the UI still reported "Saved."
+  // Prevent that no-op from being selectable once a property is set.
+  it("does not let an already-set property be cleared to None", async () => {
+    render(<DealEditView id="d1" />);
+    await waitFor(() => expect((screen.getByLabelText(/property/i) as HTMLSelectElement).value).toBe("p1"));
+
+    fireEvent.change(screen.getByLabelText(/property/i), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() => expect(updateDeal).toHaveBeenCalledWith("d1", {}));
+    expect((screen.getByLabelText(/property/i) as HTMLSelectElement).value).toBe("p1");
+  });
+
+  // Final-review fix: clearing a date input sends "", which the backend's
+  // JSON deserialization does not treat as "clear this field" (there is no
+  // such concept in this PATCH convention) - ignore it client-side rather
+  // than silently lose the date in a way the UI still reports as saved.
+  it("does not let an already-set expected close date be cleared", async () => {
+    render(<DealEditView id="d1" />);
+    await waitFor(() => expect(screen.getByLabelText(/expected close date/i)).toHaveValue("2026-12-15"));
+
+    fireEvent.change(screen.getByLabelText(/expected close date/i), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() => expect(updateDeal).toHaveBeenCalledWith("d1", {}));
+    expect(screen.getByLabelText(/expected close date/i)).toHaveValue("2026-12-15");
+  });
 });

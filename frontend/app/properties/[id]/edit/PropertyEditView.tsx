@@ -89,6 +89,15 @@ export default function PropertyEditView({ id }: { id: string }) {
     setField(key, Number(rawValue) as UpdatePropertyInput[K]);
   }
 
+  // Final-review fix: same no-way-to-clear PATCH gap as the numeric fields
+  // above - UpdatePropertyInput has no way to express "clear this field",
+  // so selecting "None" on an already-set owner used to save nothing while
+  // the form still reported "Saved."
+  function setOptionalSelect<K extends FieldKey>(key: K, rawValue: string) {
+    if (rawValue === "") return;
+    setField(key, rawValue as UpdatePropertyInput[K]);
+  }
+
   async function handleSave(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
@@ -258,7 +267,7 @@ export default function PropertyEditView({ id }: { id: string }) {
         <select
           id="ownerContactId"
           value={fields.ownerContactId ?? ""}
-          onChange={(event) => setField("ownerContactId", event.target.value || undefined)}
+          onChange={(event) => setOptionalSelect("ownerContactId", event.target.value)}
         >
           <option value="">None</option>
           {contacts.map((contact) => (

@@ -75,4 +75,24 @@ describe("New contact page", () => {
       expect.objectContaining({ ownerUserId: "u2" }),
     ));
   });
+
+  // Final-review fix: the plan calls for "inputs for every
+  // CreateContactRequest field" - preferredLocale (shown on the detail
+  // page but never settable anywhere) was missed.
+  it("lets a preferred locale be chosen and submits it", async () => {
+    (createContact as jest.Mock).mockResolvedValue({ id: "new-contact-id" });
+    render(<NewContactPage />);
+    await waitFor(() => expect(screen.getByText("Alex Agent")).toBeInTheDocument());
+
+    fireEvent.change(screen.getByLabelText(/first name/i), { target: { value: "Maria" } });
+    fireEvent.change(screen.getByLabelText(/last name/i), { target: { value: "Puig" } });
+    fireEvent.change(screen.getByLabelText(/contact type/i), { target: { value: "LEAD" } });
+    fireEvent.change(screen.getByLabelText(/^source$/i), { target: { value: "WALK_IN" } });
+    fireEvent.change(screen.getByLabelText(/preferred locale/i), { target: { value: "ca" } });
+    fireEvent.click(screen.getByRole("button", { name: /create contact/i }));
+
+    await waitFor(() => expect(createContact).toHaveBeenCalledWith(
+      expect.objectContaining({ preferredLocale: "ca" }),
+    ));
+  });
 });

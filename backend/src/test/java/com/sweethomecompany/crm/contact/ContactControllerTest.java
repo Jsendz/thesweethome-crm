@@ -38,8 +38,18 @@ class ContactControllerTest {
     // reasoning as UserControllerTest/PropertyControllerTest) @Transactional
     // rollback doesn't apply - clean up by last name, which every test here
     // sets to something unique to it.
+    // Final-review fix: these must never collide with a real contact's last
+    // name in whatever database the suite runs against (this isn't an
+    // isolated test database - see the comment below). "Puig" was a real
+    // Catalan/Andorran surname a real walk-in lead could plausibly have;
+    // using it meant cleanup could delete a real contact (and, if that
+    // contact had a deal, fail every test in this class on the foreign-key
+    // constraint). Every fixture name here is now an obviously-synthetic
+    // "Contact-*" marker, matching the convention DealControllerTest and
+    // ActivityControllerTest already use for their own contact fixtures.
     private static final List<String> TEST_LAST_NAMES = List.of(
-            "Puig", "Owned", "Missing-Type", "Blank-Name", "Gotten", "Listed-A", "Listed-B", "Updated");
+            "Contact-Basic", "Contact-Owned", "Contact-Missing-Type", "Contact-Blank-Name",
+            "Contact-Gotten", "Contact-Listed-A", "Contact-Listed-B", "Contact-Updated");
 
     @BeforeEach
     @AfterEach
@@ -88,15 +98,15 @@ class ContactControllerTest {
         Session admin = loginAsAdmin();
         AppUser adminUser = appUserRepository.findByEmail("admin@example.com").orElseThrow();
         String createJson = """
-            {"contactType":"LEAD","firstName":"Maria","lastName":"Puig","source":"WALK_IN"}""";
+            {"contactType":"LEAD","firstName":"Test","lastName":"Contact-Basic","source":"WALK_IN"}""";
 
         ResponseEntity<String> response = restTemplate.postForEntity(
             "/api/contacts", new HttpEntity<>(createJson, authedHeaders(admin)), String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-        assertThat(response.getBody()).contains("\"contactType\":\"LEAD\"", "\"firstName\":\"Maria\"", "\"lastName\":\"Puig\"");
+        assertThat(response.getBody()).contains("\"contactType\":\"LEAD\"", "\"firstName\":\"Test\"", "\"lastName\":\"Contact-Basic\"");
         Contact saved = contactRepository.findAll().stream()
-            .filter(c -> c.getLastName().equals("Puig")).findFirst().orElseThrow();
+            .filter(c -> c.getLastName().equals("Contact-Basic")).findFirst().orElseThrow();
         assertThat(saved.getOwnerUserId()).isEqualTo(adminUser.getId());
         assertThat(auditLogRepository.findAll().stream()
             .anyMatch(row -> row.getAction() == AuditAction.CREATE
@@ -109,7 +119,7 @@ class ContactControllerTest {
         Session admin = loginAsAdmin();
         AppUser adminUser = appUserRepository.findByEmail("admin@example.com").orElseThrow();
         String createJson = """
-            {"contactType":"LEAD","firstName":"Explicit","lastName":"Owned","source":"MANUAL","ownerUserId":"%s"}"""
+            {"contactType":"LEAD","firstName":"Explicit","lastName":"Contact-Owned","source":"MANUAL","ownerUserId":"%s"}"""
             .formatted(adminUser.getId());
 
         ResponseEntity<String> response = restTemplate.postForEntity(
@@ -117,7 +127,7 @@ class ContactControllerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         Contact saved = contactRepository.findAll().stream()
-            .filter(c -> c.getLastName().equals("Owned")).findFirst().orElseThrow();
+            .filter(c -> c.getLastName().equals("Contact-Owned")).findFirst().orElseThrow();
         assertThat(saved.getOwnerUserId()).isEqualTo(adminUser.getId());
     }
 
@@ -125,13 +135,13 @@ class ContactControllerTest {
     void creatingWithoutAContactTypeOrSourceReturns400() {
         Session admin = loginAsAdmin();
         String missingType = """
-            {"firstName":"No","lastName":"Missing-Type","source":"MANUAL"}""";
+            {"firstName":"No","lastName":"Contact-Missing-Type","source":"MANUAL"}""";
         ResponseEntity<String> typeResponse = restTemplate.postForEntity(
             "/api/contacts", new HttpEntity<>(missingType, authedHeaders(admin)), String.class);
         assertThat(typeResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
 
         String missingSource = """
-            {"contactType":"LEAD","firstName":"No","lastName":"Missing-Type"}""";
+            {"contactType":"LEAD","firstName":"No","lastName":"Contact-Missing-Type"}""";
         ResponseEntity<String> sourceResponse = restTemplate.postForEntity(
             "/api/contacts", new HttpEntity<>(missingSource, authedHeaders(admin)), String.class);
         assertThat(sourceResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
@@ -141,13 +151,13 @@ class ContactControllerTest {
     void creatingWithABlankFirstNameOrLastNameReturns400() {
         Session admin = loginAsAdmin();
         String blankFirst = """
-            {"contactType":"LEAD","firstName":"","lastName":"Blank-Name","source":"MANUAL"}""";
+            {"contactType":"LEAD","firstName":"","lastName":"Contact-Blank-Name","source":"MANUAL"}""";
         ResponseEntity<String> firstResponse = restTemplate.postForEntity(
             "/api/contacts", new HttpEntity<>(blankFirst, authedHeaders(admin)), String.class);
         assertThat(firstResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
 
         String blankLast = """
-            {"contactType":"LEAD","firstName":"Blank-Name","lastName":"","source":"MANUAL"}""";
+            {"contactType":"LEAD","firstName":"Contact-Blank-Name","lastName":"","source":"MANUAL"}""";
         ResponseEntity<String> lastResponse = restTemplate.postForEntity(
             "/api/contacts", new HttpEntity<>(blankLast, authedHeaders(admin)), String.class);
         assertThat(lastResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
@@ -157,7 +167,7 @@ class ContactControllerTest {
     void gettingAnExistingContactReturnsIt() {
         Session admin = loginAsAdmin();
         String createJson = """
-            {"contactType":"BUYER","firstName":"Get","lastName":"Gotten","source":"REFERRAL"}""";
+            {"contactType":"BUYER","firstName":"Get","lastName":"Contact-Gotten","source":"REFERRAL"}""";
         String createdId = extractId(restTemplate.postForEntity(
             "/api/contacts", new HttpEntity<>(createJson, authedHeaders(admin)), String.class).getBody());
 
@@ -165,7 +175,7 @@ class ContactControllerTest {
             "/api/contacts/" + createdId, HttpMethod.GET, new HttpEntity<>(authedHeaders(admin)), String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody()).contains("\"lastName\":\"Gotten\"");
+        assertThat(response.getBody()).contains("\"lastName\":\"Contact-Gotten\"");
     }
 
     @Test
@@ -183,18 +193,18 @@ class ContactControllerTest {
         Session admin = loginAsAdmin();
         restTemplate.postForEntity("/api/contacts", new HttpEntity<>(
             """
-            {"contactType":"LEAD","firstName":"List","lastName":"Listed-A","source":"MANUAL"}""",
+            {"contactType":"LEAD","firstName":"List","lastName":"Contact-Listed-A","source":"MANUAL"}""",
             authedHeaders(admin)), String.class);
         restTemplate.postForEntity("/api/contacts", new HttpEntity<>(
             """
-            {"contactType":"LEAD","firstName":"List","lastName":"Listed-B","source":"MANUAL"}""",
+            {"contactType":"LEAD","firstName":"List","lastName":"Contact-Listed-B","source":"MANUAL"}""",
             authedHeaders(admin)), String.class);
 
         ResponseEntity<String> response = restTemplate.exchange(
             "/api/contacts", HttpMethod.GET, new HttpEntity<>(authedHeaders(admin)), String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody()).contains("Listed-A", "Listed-B");
+        assertThat(response.getBody()).contains("Contact-Listed-A", "Contact-Listed-B");
     }
 
     @Test
@@ -202,7 +212,7 @@ class ContactControllerTest {
         Session admin = loginAsAdmin();
         AppUser adminUser = appUserRepository.findByEmail("admin@example.com").orElseThrow();
         String createJson = """
-            {"contactType":"LEAD","firstName":"Update","lastName":"Updated","source":"MANUAL"}""";
+            {"contactType":"LEAD","firstName":"Update","lastName":"Contact-Updated","source":"MANUAL"}""";
         String createdId = extractId(restTemplate.postForEntity(
             "/api/contacts", new HttpEntity<>(createJson, authedHeaders(admin)), String.class).getBody());
 

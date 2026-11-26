@@ -8,6 +8,9 @@ import { fetchUserDirectory, UserDirectoryEntry } from "../../../lib/users";
 
 const CONTACT_TYPES: ContactType[] = ["BUYER", "SELLER", "TENANT", "LANDLORD", "LEAD"];
 const CONTACT_SOURCES: ContactSource[] = ["PORTAL", "WEBSITE", "REFERRAL", "MANUAL", "WALK_IN"];
+// Matches the locales properties can be translated into (design's own
+// `default_locale`/`preferred_locale` columns: "ca, es, fr, en").
+const CONTACT_LOCALES = ["ca", "es", "fr", "en"] as const;
 
 export default function NewContactPage() {
   const router = useRouter();
@@ -20,6 +23,7 @@ export default function NewContactPage() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [sourceDetail, setSourceDetail] = useState("");
+  const [preferredLocale, setPreferredLocale] = useState("");
   const [notes, setNotes] = useState("");
   const [ownerUserId, setOwnerUserId] = useState("");
   const [users, setUsers] = useState<UserDirectoryEntry[]>([]);
@@ -56,6 +60,7 @@ export default function NewContactPage() {
         lastName,
         email: email || undefined,
         phone: phone || undefined,
+        preferredLocale: preferredLocale || undefined,
         source,
         sourceDetail: sourceDetail || undefined,
         notes: notes || undefined,
@@ -107,6 +112,20 @@ export default function NewContactPage() {
 
         <label htmlFor="sourceDetail">Source detail</label>
         <input id="sourceDetail" value={sourceDetail} onChange={(event) => setSourceDetail(event.target.value)} />
+
+        <label htmlFor="preferredLocale">Preferred locale</label>
+        <select
+          id="preferredLocale"
+          value={preferredLocale}
+          onChange={(event) => setPreferredLocale(event.target.value)}
+        >
+          <option value="">Unset</option>
+          {CONTACT_LOCALES.map((locale) => (
+            <option key={locale} value={locale}>
+              {locale}
+            </option>
+          ))}
+        </select>
 
         <label htmlFor="notes">Notes</label>
         <textarea id="notes" value={notes} onChange={(event) => setNotes(event.target.value)} />

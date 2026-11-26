@@ -18,9 +18,34 @@ import {
 const ACTIVITY_TYPES: ActivityType[] = ["CALL", "EMAIL", "VIEWING", "MEETING", "NOTE", "WHATSAPP"];
 const ACTIVITY_STATUSES: ActivityStatus[] = ["SCHEDULED", "COMPLETED", "CANCELLED", "NO_SHOW"];
 
+// Stages that require a reason collected via the dedicated Mark as
+// cold/Close as lost buttons below, rather than the plain stage dropdown,
+// which has no way to collect one.
+const STAGES_REQUIRING_A_REASON: DealStage[] = ["COLD", "CLOSED_LOST"];
+
+function pad(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
 function nowForDateTimeInput(): string {
-  // yyyy-MM-ddThh:mm, the format <input type="datetime-local"> expects.
-  return new Date().toISOString().slice(0, 16);
+  // yyyy-MM-ddThh:mm, the format <input type="datetime-local"> expects and
+  // displays in LOCAL time. Date#toISOString() is always UTC, so building
+  // this from it (the original implementation) silently shifted the
+  // default by the browser's UTC offset - every freshly-logged activity in
+  // Andorra (UTC+1/+2) would have been saved 1-2 hours into the past.
+  const now = new Date();
+  return (
+    `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}` +
+    `T${pad(now.getHours())}:${pad(now.getMinutes())}`
+  );
+}
+
+function formatOccurredAt(occurredAt: string): string {
+  return new Date(occurredAt).toLocaleString();
+}
+
+function sortedByOccurredAtDescending(entries: ActivityEntry[]): ActivityEntry[] {
+  return [...entries].sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime());
 }
 
 export default function DealDetailView({ id }: { id: string }) {
@@ -31,42 +56,64 @@ export default function DealDetailView({ id }: { id: string }) {
   const [notes, setNotes] = useState("");
   const [occurredAt, setOccurredAt] = useState(nowForDateTimeInput());
   const [status, setStatus] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchDeal(id).then(setDeal);
-    fetchActivities(id).then(setActivities);
+    fetchActivities(id).then((loaded) => setActivities(sortedByOccurredAtDescending(loaded)));
   }, [id]);
 
   async function handleStageChange(newStage: DealStage) {
-    const updated = await updateDeal(id, { stage: newStage });
-    setDeal(updated);
+    setError(null);
+    try {
+      const updated = await updateDeal(id, { stage: newStage });
+      setDeal(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save the deal.");
+    }
   }
 
   async function handleMarkAsCold() {
     const reason = window.prompt("Reason for marking this deal as cold:");
     if (!reason || !reason.trim()) return;
-    const updated = await updateDeal(id, { stage: "COLD", coldReason: reason });
-    setDeal(updated);
+    setError(null);
+    try {
+      const updated = await updateDeal(id, { stage: "COLD", coldReason: reason });
+      setDeal(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save the deal.");
+    }
   }
 
   async function handleCloseAsLost() {
     const reason = window.prompt("Reason for closing this deal as lost:");
     if (!reason || !reason.trim()) return;
-    const updated = await updateDeal(id, { stage: "CLOSED_LOST", lostReason: reason });
-    setDeal(updated);
+    setError(null);
+    try {
+      const updated = await updateDeal(id, { stage: "CLOSED_LOST", lostReason: reason });
+      setDeal(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save the deal.");
+    }
   }
 
   async function handleLogActivity(event: React.FormEvent) {
     event.preventDefault();
-    const logged = await logActivity(id, {
-      activityType,
-      notes: notes || undefined,
-      occurredAt: new Date(occurredAt).toISOString(),
-      status: status ? (status as ActivityStatus) : undefined,
-    });
-    setActivities((previous) => [logged, ...previous]);
-    setNotes("");
-    setStatus("");
+    setError(null);
+    try {
+      const logged = await logActivity(id, {
+        activityType,
+        notes: notes || undefined,
+        occurredAt: new Date(occurredAt).toISOString(),
+        status: status ? (status as ActivityStatus) : undefined,
+      });
+      setActivities((previous) => sortedByOccurredAtDescending([...previous, logged]));
+      setNotes("");
+      setStatus("");
+      setOccurredAt(nowForDateTimeInput());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not log the activity.");
+    }
   }
 
   if (!deal) {
@@ -75,7 +122,9 @@ export default function DealDetailView({ id }: { id: string }) {
 
   return (
     <main>
-      <h1>{deal.contactName}</h1>
+      <h1>
+        <Link href={`/contacts/${deal.contactId}`}>{deal.contactName}</Link>
+      </h1>
       <Link href={`/deals/${deal.id}/edit`}>Edit</Link>
 
       <dl>
@@ -106,7 +155,11 @@ export default function DealDetailView({ id }: { id: string }) {
         onChange={(event) => handleStageChange(event.target.value as DealStage)}
       >
         {DEAL_STAGES.map((candidate) => (
-          <option key={candidate} value={candidate}>
+          <option
+            key={candidate}
+            value={candidate}
+            disabled={STAGES_REQUIRING_A_REASON.includes(candidate) && deal.stage !== candidate}
+          >
             {candidate}
           </option>
         ))}
@@ -118,6 +171,8 @@ export default function DealDetailView({ id }: { id: string }) {
       <button type="button" onClick={handleCloseAsLost}>
         Close as lost
       </button>
+
+      {error && <p>{error}</p>}
 
       <section>
         <h2>Activity</h2>
@@ -162,9 +217,13 @@ export default function DealDetailView({ id }: { id: string }) {
         <ul>
           {activities.map((activity) => (
             <li key={activity.id}>
+              <span>{formatOccurredAt(activity.occurredAt)}</span>
+              {" — "}
               <span>{activity.activityType}</span>
               {" — "}
               <span>{activity.status}</span>
+              {" — "}
+              <span>{activity.userFullName}</span>
               {activity.notes && (
                 <>
                   {" — "}
