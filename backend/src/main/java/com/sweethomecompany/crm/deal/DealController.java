@@ -36,6 +36,7 @@ public class DealController {
     private final ContactRepository contactRepository;
     private final PropertyRepository propertyRepository;
     private final AppUserRepository appUserRepository;
+    private final ActivityRepository activityRepository;
     private final AuditLogService auditLogService;
     private final ObjectMapper objectMapper;
     private final UUID defaultAgencyId;
@@ -45,6 +46,7 @@ public class DealController {
             ContactRepository contactRepository,
             PropertyRepository propertyRepository,
             AppUserRepository appUserRepository,
+            ActivityRepository activityRepository,
             AuditLogService auditLogService,
             ObjectMapper objectMapper,
             @Value("${app.default-agency-id}") UUID defaultAgencyId) {
@@ -52,6 +54,7 @@ public class DealController {
         this.contactRepository = contactRepository;
         this.propertyRepository = propertyRepository;
         this.appUserRepository = appUserRepository;
+        this.activityRepository = activityRepository;
         this.auditLogService = auditLogService;
         this.objectMapper = objectMapper;
         this.defaultAgencyId = defaultAgencyId;
@@ -184,6 +187,59 @@ public class DealController {
         }
 
         return toResponse(saved);
+    }
+
+    @PostMapping("/{id}/activities")
+    public ResponseEntity<ActivityResponse> logActivity(
+            @PathVariable UUID id,
+            @RequestBody CreateActivityRequest request,
+            @AuthenticationPrincipal AppUserPrincipal actor) {
+        Deal deal = dealRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        if (request.activityType() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Activity type is required");
+        }
+        if (request.occurredAt() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Occurred-at time is required");
+        }
+
+        ActivityStatus status = request.status() != null
+                ? request.status()
+                : (request.activityType() == ActivityType.VIEWING ? ActivityStatus.SCHEDULED : ActivityStatus.COMPLETED);
+
+        Activity activity = new Activity();
+        activity.setId(UUID.randomUUID());
+        activity.setAgencyId(defaultAgencyId);
+        activity.setContactId(deal.getContactId());
+        activity.setDealId(deal.getId());
+        activity.setPropertyId(deal.getPropertyId());
+        activity.setUserId(actor.getId());
+        activity.setActivityType(request.activityType());
+        activity.setStatus(status);
+        activity.setNotes(request.notes());
+        activity.setOccurredAt(request.occurredAt());
+        activity.setCreatedAt(Instant.now());
+
+        Activity saved = activityRepository.save(activity);
+
+        auditLogService.log(defaultAgencyId, actor.getId(), AuditAction.CREATE, "ACTIVITY", saved.getId(), null);
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(ActivityResponse.from(saved, actor.getFullName()));
+    }
+
+    @GetMapping("/{id}/activities")
+    public List<ActivityResponse> listActivities(@PathVariable UUID id) {
+        if (!dealRepository.existsById(id)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        }
+        return activityRepository.findByDealIdOrderByOccurredAtDesc(id).stream()
+                .map(activity -> {
+                    AppUser user = appUserRepository.findById(activity.getUserId())
+                            .orElseThrow(() -> new IllegalStateException(
+                                    "Activity " + activity.getId() + " references a missing user"));
+                    return ActivityResponse.from(activity, user.getFullName());
+                })
+                .toList();
     }
 
     private DealResponse toResponse(Deal deal) {
