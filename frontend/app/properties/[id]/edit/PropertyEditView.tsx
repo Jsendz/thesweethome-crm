@@ -12,6 +12,7 @@ import {
   updateProperty,
   UpdatePropertyInput,
 } from "../../../../lib/properties";
+import { ContactSummary, fetchContacts } from "../../../../lib/contacts";
 
 const PROPERTY_TYPES: PropertyType[] = ["APARTMENT", "HOUSE", "LAND", "COMMERCIAL", "PARKING", "OTHER"];
 const OPERATIONS: Operation[] = ["SALE", "RENT", "SALE_OR_RENT"];
@@ -30,6 +31,7 @@ type FieldKey = keyof UpdatePropertyInput;
 
 export default function PropertyEditView({ id }: { id: string }) {
   const [property, setProperty] = useState<PropertyDetail | null>(null);
+  const [contacts, setContacts] = useState<ContactSummary[]>([]);
   const [fields, setFields] = useState<UpdatePropertyInput>({});
   const [changed, setChanged] = useState<Partial<Record<FieldKey, true>>>({});
   const [saved, setSaved] = useState(false);
@@ -62,8 +64,10 @@ export default function PropertyEditView({ id }: { id: string }) {
         exclusivityEndDate: loaded.exclusivityEndDate ?? undefined,
         caTitle: ca?.title,
         caDescription: ca?.description ?? undefined,
+        ownerContactId: loaded.ownerContactId ?? undefined,
       });
     });
+    fetchContacts().then(setContacts);
   }, [id]);
 
   function setField<K extends FieldKey>(key: K, value: UpdatePropertyInput[K]) {
@@ -249,6 +253,20 @@ export default function PropertyEditView({ id }: { id: string }) {
           value={fields.exclusivityEndDate ?? ""}
           onChange={(event) => setField("exclusivityEndDate", event.target.value)}
         />
+
+        <label htmlFor="ownerContactId">Owner</label>
+        <select
+          id="ownerContactId"
+          value={fields.ownerContactId ?? ""}
+          onChange={(event) => setField("ownerContactId", event.target.value || undefined)}
+        >
+          <option value="">None</option>
+          {contacts.map((contact) => (
+            <option key={contact.id} value={contact.id}>
+              {contact.firstName} {contact.lastName}
+            </option>
+          ))}
+        </select>
 
         <label htmlFor="caTitle">Catalan title</label>
         <input id="caTitle" value={fields.caTitle ?? ""} onChange={(event) => setField("caTitle", event.target.value)} />
