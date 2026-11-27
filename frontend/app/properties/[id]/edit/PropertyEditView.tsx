@@ -12,6 +12,7 @@ import {
   updateProperty,
   UpdatePropertyInput,
 } from "../../../../lib/properties";
+import { ContactSummary, fetchContacts } from "../../../../lib/contacts";
 
 const PROPERTY_TYPES: PropertyType[] = ["APARTMENT", "HOUSE", "LAND", "COMMERCIAL", "PARKING", "OTHER"];
 const OPERATIONS: Operation[] = ["SALE", "RENT", "SALE_OR_RENT"];
@@ -30,6 +31,7 @@ type FieldKey = keyof UpdatePropertyInput;
 
 export default function PropertyEditView({ id }: { id: string }) {
   const [property, setProperty] = useState<PropertyDetail | null>(null);
+  const [contacts, setContacts] = useState<ContactSummary[]>([]);
   const [fields, setFields] = useState<UpdatePropertyInput>({});
   const [changed, setChanged] = useState<Partial<Record<FieldKey, true>>>({});
   const [saved, setSaved] = useState(false);
@@ -62,8 +64,10 @@ export default function PropertyEditView({ id }: { id: string }) {
         exclusivityEndDate: loaded.exclusivityEndDate ?? undefined,
         caTitle: ca?.title,
         caDescription: ca?.description ?? undefined,
+        ownerContactId: loaded.ownerContactId ?? undefined,
       });
     });
+    fetchContacts().then(setContacts);
   }, [id]);
 
   function setField<K extends FieldKey>(key: K, value: UpdatePropertyInput[K]) {
@@ -83,6 +87,15 @@ export default function PropertyEditView({ id }: { id: string }) {
   function setNumericField<K extends FieldKey>(key: K, rawValue: string) {
     if (rawValue === "") return;
     setField(key, Number(rawValue) as UpdatePropertyInput[K]);
+  }
+
+  // Final-review fix: same no-way-to-clear PATCH gap as the numeric fields
+  // above - UpdatePropertyInput has no way to express "clear this field",
+  // so selecting "None" on an already-set owner used to save nothing while
+  // the form still reported "Saved."
+  function setOptionalSelect<K extends FieldKey>(key: K, rawValue: string) {
+    if (rawValue === "") return;
+    setField(key, rawValue as UpdatePropertyInput[K]);
   }
 
   async function handleSave(event: React.FormEvent) {
@@ -249,6 +262,20 @@ export default function PropertyEditView({ id }: { id: string }) {
           value={fields.exclusivityEndDate ?? ""}
           onChange={(event) => setField("exclusivityEndDate", event.target.value)}
         />
+
+        <label htmlFor="ownerContactId">Owner</label>
+        <select
+          id="ownerContactId"
+          value={fields.ownerContactId ?? ""}
+          onChange={(event) => setOptionalSelect("ownerContactId", event.target.value)}
+        >
+          <option value="">None</option>
+          {contacts.map((contact) => (
+            <option key={contact.id} value={contact.id}>
+              {contact.firstName} {contact.lastName}
+            </option>
+          ))}
+        </select>
 
         <label htmlFor="caTitle">Catalan title</label>
         <input id="caTitle" value={fields.caTitle ?? ""} onChange={(event) => setField("caTitle", event.target.value)} />

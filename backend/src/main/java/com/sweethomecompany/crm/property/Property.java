@@ -74,6 +74,9 @@ public class Property {
     @Column(name = "exclusivity_end_date")
     private LocalDate exclusivityEndDate;
 
+    @Column(name = "owner_contact_id")
+    private UUID ownerContactId;
+
     @Column(name = "created_by_user_id")
     private UUID createdByUserId;
 
@@ -244,6 +247,14 @@ public class Property {
 
     public void setExclusivityEndDate(LocalDate exclusivityEndDate) {
         this.exclusivityEndDate = exclusivityEndDate;
+    }
+
+    public UUID getOwnerContactId() {
+        return ownerContactId;
+    }
+
+    public void setOwnerContactId(UUID ownerContactId) {
+        this.ownerContactId = ownerContactId;
     }
 
     public UUID getCreatedByUserId() {

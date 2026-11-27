@@ -2,6 +2,7 @@ package com.sweethomecompany.crm.property;
 
 import com.sweethomecompany.crm.audit.AuditAction;
 import com.sweethomecompany.crm.audit.AuditLogRepository;
+import com.sweethomecompany.crm.contact.ContactRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,6 +38,9 @@ class PropertyControllerTest {
     @Autowired
     private AuditLogRepository auditLogRepository;
 
+    @Autowired
+    private ContactRepository contactRepository;
+
     @Value("${app.default-agency-id}")
     private UUID defaultAgencyId;
 
@@ -46,7 +50,12 @@ class PropertyControllerTest {
     private static final List<String> TEST_REFERENCE_CODES = List.of(
             "P-001", "P-DUPE", "P-NO-CA", "P-BAD-PRICE", "P-NEGATIVE-PRICE", "P-NO-PRICE", "P-GET", "P-404-PROOF",
             "P-LIST-A", "P-LIST-B", "P-UPDATE", "P-BAD-PATCH-PRICE", "P-CA-EDIT", "P-TRANSLATE", "P-CA-REJECT",
-            "P-DUPE-TARGET", "P-DUPE-SOURCE", "P-BLANK-PATCH", "P-PARISH-ONLY");
+            "P-DUPE-TARGET", "P-DUPE-SOURCE", "P-BLANK-PATCH", "P-PARISH-ONLY",
+            "P-OWNER-CREATE", "P-OWNER-404", "P-OWNER-UPDATE");
+
+    // ownerContactId tests create a contact to reference - cleaned up by last
+    // name, same pattern ContactControllerTest/DealControllerTest use.
+    private static final List<String> TEST_CONTACT_LAST_NAMES = List.of("Property-Owner");
 
     @BeforeEach
     @AfterEach
@@ -57,6 +66,9 @@ class PropertyControllerTest {
                             propertyTranslationRepository.findByPropertyId(property.getId()));
                     propertyRepository.delete(property);
                 }));
+        contactRepository.findAll().stream()
+                .filter(c -> TEST_CONTACT_LAST_NAMES.contains(c.getLastName()))
+                .forEach(contactRepository::delete);
     }
 
     private String extractCookie(ResponseEntity<?> response, String name) {
@@ -404,5 +416,67 @@ class PropertyControllerTest {
                 String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    private String createContact(Session session, String lastName) {
+        String createJson = """
+            {"contactType":"LEAD","firstName":"Owner","lastName":"%s","source":"MANUAL"}""".formatted(lastName);
+        String body = restTemplate.postForEntity(
+                "/api/contacts", new HttpEntity<>(createJson, authedHeaders(session)), String.class).getBody();
+        int start = body.indexOf("\"id\":\"") + 6;
+        int end = body.indexOf("\"", start);
+        return body.substring(start, end);
+    }
+
+    @Test
+    void creatingWithAnOwnerContactIdSucceedsAndItIsReflectedInTheResponse() {
+        Session admin = loginAsAdmin();
+        String contactId = createContact(admin, "Property-Owner");
+        String createJson = """
+                {"referenceCode":"P-OWNER-CREATE","propertyType":"APARTMENT","operation":"SALE",
+                 "price":1000,"caTitle":"Amb propietari","ownerContactId":"%s"}""".formatted(contactId);
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                "/api/properties", new HttpEntity<>(createJson, authedHeaders(admin)), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).contains("\"ownerContactId\":\"" + contactId + "\"");
+    }
+
+    @Test
+    void creatingWithANonexistentOwnerContactIdReturns404() {
+        Session admin = loginAsAdmin();
+        String createJson = """
+                {"referenceCode":"P-OWNER-404","propertyType":"APARTMENT","operation":"SALE",
+                 "price":1000,"caTitle":"Sense propietari","ownerContactId":"%s"}""".formatted(UUID.randomUUID());
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                "/api/properties", new HttpEntity<>(createJson, authedHeaders(admin)), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(propertyRepository.findByAgencyIdAndReferenceCode(defaultAgencyId, "P-OWNER-404")).isEmpty();
+    }
+
+    @Test
+    void updatingOwnerContactIdSucceedsAndWritesAnUpdateAuditRow() {
+        Session admin = loginAsAdmin();
+        String contactId = createContact(admin, "Property-Owner");
+        restTemplate.postForEntity("/api/properties", new HttpEntity<>("""
+                {"referenceCode":"P-OWNER-UPDATE","propertyType":"APARTMENT","operation":"SALE",
+                 "price":1000,"caTitle":"Per actualitzar"}""", authedHeaders(admin)), String.class);
+        Property saved = propertyRepository.findByAgencyIdAndReferenceCode(defaultAgencyId, "P-OWNER-UPDATE").orElseThrow();
+
+        ResponseEntity<String> response = restTemplate.exchange(
+                "/api/properties/" + saved.getId(), HttpMethod.PATCH,
+                new HttpEntity<>("{\"ownerContactId\":\"" + contactId + "\"}", authedHeaders(admin)), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).contains("\"ownerContactId\":\"" + contactId + "\"");
+        assertThat(auditLogRepository.findAll().stream()
+                .anyMatch(row -> row.getAction() == AuditAction.UPDATE
+                        && row.getEntityId().equals(saved.getId())
+                        && row.getDetail() != null
+                        && row.getDetail().contains("ownerContactId")))
+                .isTrue();
     }
 }

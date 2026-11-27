@@ -49,6 +49,7 @@ export type CreatePropertyInput = {
   exclusivityEndDate?: string;
   caTitle: string;
   caDescription?: string;
+  ownerContactId?: string;
 };
 
 // Mirrors the backend's PropertyResponse (see
@@ -86,6 +87,7 @@ export type PropertyDetail = {
   energyRating: string | null;
   isExclusive: boolean;
   exclusivityEndDate: string | null;
+  ownerContactId: string | null;
   translations: Translation[];
   media: Media[];
   createdAt: string;

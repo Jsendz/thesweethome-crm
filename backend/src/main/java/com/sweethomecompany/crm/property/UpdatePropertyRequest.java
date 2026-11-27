@@ -2,6 +2,7 @@ package com.sweethomecompany.crm.property;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.UUID;
 
 /**
  * Every field is optional: omitting a field means "leave it unchanged,"
@@ -29,5 +30,6 @@ public record UpdatePropertyRequest(
         Boolean isExclusive,
         LocalDate exclusivityEndDate,
         String caTitle,
-        String caDescription) {
+        String caDescription,
+        UUID ownerContactId) {
 }

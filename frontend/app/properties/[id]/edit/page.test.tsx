@@ -1,8 +1,10 @@
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import PropertyEditView from "./PropertyEditView";
 import { fetchProperty, updateProperty, addTranslation } from "../../../../lib/properties";
+import { fetchContacts } from "../../../../lib/contacts";
 
 jest.mock("../../../../lib/properties");
+jest.mock("../../../../lib/contacts");
 jest.mock("../../../components/PhotoUploader", () => ({
   __esModule: true,
   default: ({ propertyId, media }: { propertyId: string; media: unknown[] }) => (
@@ -44,6 +46,10 @@ describe("Edit listing page", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (fetchProperty as jest.Mock).mockResolvedValue(PROPERTY);
+    (fetchContacts as jest.Mock).mockResolvedValue([
+      { id: "c1", firstName: "Maria", lastName: "Puig" },
+      { id: "c2", firstName: "Jordi", lastName: "Vila" },
+    ]);
   });
 
   it("loads the property's current values into the form", async () => {
@@ -103,6 +109,37 @@ describe("Edit listing page", () => {
 
     await waitFor(() =>
         expect(addTranslation).toHaveBeenCalledWith("abc", "en", "English title", undefined));
+  });
+
+  it("renders an Owner select populated from fetched contacts and submits the chosen id", async () => {
+    (updateProperty as jest.Mock).mockResolvedValue({ ...PROPERTY, ownerContactId: "c2" });
+    render(<PropertyEditView id="abc" />);
+    await waitFor(() => expect(screen.getByLabelText(/reference code/i)).toHaveValue("P-001"));
+
+    expect(screen.getByRole("option", { name: "Maria Puig" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Jordi Vila" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/^owner/i), { target: { value: "c2" } });
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() => expect(updateProperty).toHaveBeenCalledWith("abc", { ownerContactId: "c2" }));
+    expect(await screen.findByText(/saved/i)).toBeInTheDocument();
+  });
+
+  // Final-review fix: same no-way-to-clear PATCH gap as the deal edit
+  // view - selecting "None" after an owner is already set used to save
+  // nothing while still reporting "Saved."
+  it("does not let an already-set owner be cleared to None", async () => {
+    const propertyWithOwner = { ...PROPERTY, ownerContactId: "c1" };
+    (fetchProperty as jest.Mock).mockResolvedValue(propertyWithOwner);
+    render(<PropertyEditView id="abc" />);
+    await waitFor(() => expect((screen.getByLabelText(/^owner/i) as HTMLSelectElement).value).toBe("c1"));
+
+    fireEvent.change(screen.getByLabelText(/^owner/i), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() => expect(updateProperty).toHaveBeenCalledWith("abc", {}));
+    expect((screen.getByLabelText(/^owner/i) as HTMLSelectElement).value).toBe("c1");
   });
 
   it("renders the PhotoUploader with the property's existing media", async () => {

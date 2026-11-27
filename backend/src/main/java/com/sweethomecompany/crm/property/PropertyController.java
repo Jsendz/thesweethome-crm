@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sweethomecompany.crm.audit.AuditAction;
 import com.sweethomecompany.crm.audit.AuditLogService;
+import com.sweethomecompany.crm.contact.Contact;
+import com.sweethomecompany.crm.contact.ContactRepository;
 import com.sweethomecompany.crm.security.AppUserPrincipal;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -37,6 +39,7 @@ public class PropertyController {
     private final PropertyRepository propertyRepository;
     private final PropertyTranslationRepository propertyTranslationRepository;
     private final PropertyMediaRepository propertyMediaRepository;
+    private final ContactRepository contactRepository;
     private final AuditLogService auditLogService;
     private final ObjectMapper objectMapper;
     private final UUID defaultAgencyId;
@@ -45,12 +48,14 @@ public class PropertyController {
             PropertyRepository propertyRepository,
             PropertyTranslationRepository propertyTranslationRepository,
             PropertyMediaRepository propertyMediaRepository,
+            ContactRepository contactRepository,
             AuditLogService auditLogService,
             ObjectMapper objectMapper,
             @Value("${app.default-agency-id}") UUID defaultAgencyId) {
         this.propertyRepository = propertyRepository;
         this.propertyTranslationRepository = propertyTranslationRepository;
         this.propertyMediaRepository = propertyMediaRepository;
+        this.contactRepository = contactRepository;
         this.auditLogService = auditLogService;
         this.objectMapper = objectMapper;
         this.defaultAgencyId = defaultAgencyId;
@@ -79,6 +84,9 @@ public class PropertyController {
         if (propertyRepository.existsByAgencyIdAndReferenceCode(defaultAgencyId, request.referenceCode())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Reference code already in use");
         }
+        if (request.ownerContactId() != null && contactRepository.findById(request.ownerContactId()).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Owner contact not found");
+        }
 
         Property property = new Property();
         property.setId(UUID.randomUUID());
@@ -99,6 +107,7 @@ public class PropertyController {
         property.setEnergyRating(request.energyRating());
         property.setExclusive(Boolean.TRUE.equals(request.isExclusive()));
         property.setExclusivityEndDate(request.exclusivityEndDate());
+        property.setOwnerContactId(request.ownerContactId());
         property.setCreatedByUserId(actor.getId());
         Instant now = Instant.now();
         property.setCreatedAt(now);
@@ -168,6 +177,11 @@ public class PropertyController {
         }
         if (request.caTitle() != null && request.caTitle().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Catalan title cannot be blank");
+        }
+        Contact ownerContact = null;
+        if (request.ownerContactId() != null) {
+            ownerContact = contactRepository.findById(request.ownerContactId())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Owner contact not found"));
         }
 
         Map<String, Object> changes = new LinkedHashMap<>();
@@ -242,6 +256,10 @@ public class PropertyController {
             changes.put("exclusivityEndDate",
                     Map.of("from", str(property.getExclusivityEndDate()), "to", request.exclusivityEndDate()));
             property.setExclusivityEndDate(request.exclusivityEndDate());
+        }
+        if (ownerContact != null && !ownerContact.getId().equals(property.getOwnerContactId())) {
+            changes.put("ownerContactId", Map.of("from", str(property.getOwnerContactId()), "to", ownerContact.getId()));
+            property.setOwnerContactId(ownerContact.getId());
         }
 
         List<PropertyTranslation> translations = propertyTranslationRepository.findByPropertyId(id);

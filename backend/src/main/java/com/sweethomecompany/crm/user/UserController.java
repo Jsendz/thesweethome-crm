@@ -106,6 +106,18 @@ public class UserController {
         return appUserRepository.findAll().stream().map(UserResponse::from).toList();
     }
 
+    // Method-level @PreAuthorize overrides the class-level one entirely (they
+    // are not combined), which is what makes this endpoint reachable by any
+    // authenticated user despite the class carrying @PreAuthorize("hasRole('ADMIN')").
+    @GetMapping("/directory")
+    @PreAuthorize("isAuthenticated()")
+    public List<UserDirectoryEntry> directory() {
+        return appUserRepository.findAll().stream()
+            .filter(AppUser::isActive)
+            .map(UserDirectoryEntry::from)
+            .toList();
+    }
+
     @PatchMapping("/{id}")
     public UserResponse update(
             @PathVariable UUID id,

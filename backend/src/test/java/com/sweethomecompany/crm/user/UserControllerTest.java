@@ -37,7 +37,8 @@ class UserControllerTest {
     private static final List<String> TEST_EMAILS = List.of(
         "new-agent@example.com", "dupe@example.com", "manager@example.com",
         "blocked@example.com", "to-deactivate@example.com", "csrf-check@example.com",
-        "no-password@example.com", "casedupe@example.com", "role-change-agent@example.com");
+        "no-password@example.com", "casedupe@example.com", "role-change-agent@example.com",
+        "agent-directory@example.com", "manager-regression@example.com");
 
     @BeforeEach
     @AfterEach
@@ -280,6 +281,36 @@ class UserControllerTest {
         assertThat(loginFails("role-change-agent@example.com", "original-password")).isTrue();
         Session withNewPassword = loginAs("role-change-agent@example.com", "brand-new-password");
         assertThat(withNewPassword.sessionCookie()).isNotBlank();
+    }
+
+    @Test
+    void directoryIsReachableByANonAdminUserAndExposesOnlyIdAndFullName() {
+        Session admin = loginAs("admin@example.com", "change-me-now");
+        String createJson = """
+            {"email":"agent-directory@example.com","password":"a-strong-password","fullName":"Agent Directory","role":"AGENT"}""";
+        restTemplate.postForEntity("/api/users", new HttpEntity<>(createJson, authedHeaders(admin)), String.class);
+        Session agent = loginAs("agent-directory@example.com", "a-strong-password");
+
+        ResponseEntity<String> response = restTemplate.exchange(
+            "/api/users/directory", HttpMethod.GET, new HttpEntity<>(authedHeaders(agent)), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).contains("Agent Directory");
+        assertThat(response.getBody()).doesNotContain("\"email\"", "\"role\"", "\"active\"");
+    }
+
+    @Test
+    void theExistingUsersEndpointStillRejectsANonAdminCaller() {
+        Session admin = loginAs("admin@example.com", "change-me-now");
+        String createJson = """
+            {"email":"manager-regression@example.com","password":"a-strong-password","fullName":"Manager Regression","role":"MANAGER"}""";
+        restTemplate.postForEntity("/api/users", new HttpEntity<>(createJson, authedHeaders(admin)), String.class);
+        Session manager = loginAs("manager-regression@example.com", "a-strong-password");
+
+        ResponseEntity<String> response = restTemplate.exchange(
+            "/api/users", HttpMethod.GET, new HttpEntity<>(authedHeaders(manager)), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     }
 
     private boolean loginFails(String email, String password) {

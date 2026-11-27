@@ -24,6 +24,8 @@ export function NavBar() {
     <nav>
       <span>{user.email}</span>
       <Link href="/properties">Listings</Link>
+      <Link href="/contacts">Contacts</Link>
+      <Link href="/deals">Deals</Link>
       {user.role === "ADMIN" && <Link href="/users">Users</Link>}
       <button onClick={handleLogout}>Log out</button>
     </nav>
